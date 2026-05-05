@@ -6,9 +6,9 @@ import statsmodels.formula.api as smf
 
 matplotlib.use("Agg")
 import xgboost as xgb
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_absolute_error
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Lasso, Ridge
+from sklearn.linear_model import Lasso, Ridge, LinearRegression
 import joblib
 import os
 import shap
@@ -19,7 +19,6 @@ from team_qualities import get_team_qualities, convertToZscores
 from setup import (
     TEAM_QUALS,
     IND_VARS,
-    normal_quals
 )
  
 from misc.plots import create_r2_residuals_plot
@@ -188,7 +187,7 @@ def createShapPlot(model, X, model_type, target, path_prefix):
     plt.close()
 
 OLS = True
-XGBOOST = False
+XGBOOST = True
 RIDGE = True
 LASSO = True
 RF = True
@@ -240,6 +239,7 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
     
     # Create residual plot for OLS
     ols_predictions = ols_model.predict(clean_df)
+    mae = mean_absolute_error(clean_df["Target"], ols_predictions)
     ols_residuals = clean_df["Target"].values - ols_predictions.values
     os.makedirs(f"../Figures/{path_prefix}", exist_ok=True)
     create_r2_residuals_plot(clean_df["Target"].values, ols_predictions.values, ols_residuals, ols_r2, f"{target}_ols", path_prefix)
@@ -270,7 +270,7 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
         
         params_df.to_csv(f'../parameters/{path_prefix}/{target}.csv', index=False)
 
-    return ols_r2
+    return ols_r2, mae
 
 def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
     # Prepare data for tree/regression models
@@ -320,6 +320,7 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
 
     y_pred_xgb = xgb_model.predict(X_full)
     xgb_r2 = r2_score(y, y_pred_xgb)
+    mae = mean_absolute_error(y, y_pred_xgb)
     xgb_residuals = y.values - y_pred_xgb
 
     # df_predictions = pd.concat([df_predictions, X_full.assign(Target=y, Prediction=xgb_model.predict(X_full), Model=f"{target}_xgboost")], ignore_index=True)
@@ -358,7 +359,7 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
         print(f"Error creating SHAP plot for {target} XGBoost: {e}")
         pass
     
-    return xgb_r2
+    return xgb_r2, mae
 
 def lasso_model(suggest_features, clean_df, path_prefix, target, save_models):
     X_full = clean_df[suggest_features].copy().fillna(0)
@@ -367,6 +368,7 @@ def lasso_model(suggest_features, clean_df, path_prefix, target, save_models):
     lasso_model.fit(X_full, y)
     y_pred_lasso = lasso_model.predict(X_full)
     lasso_r2 = r2_score(y, y_pred_lasso)
+    mae = mean_absolute_error(y, y_pred_lasso)
     lasso_residuals = y.values - y_pred_lasso
     
     if save_models:
@@ -381,7 +383,7 @@ def lasso_model(suggest_features, clean_df, path_prefix, target, save_models):
     except:
         pass
 
-    return lasso_r2
+    return lasso_r2, mae
 
 def ridge_model(suggest_features, clean_df, path_prefix, target, save_models):
     # ========== RIDGE ==========
@@ -391,6 +393,7 @@ def ridge_model(suggest_features, clean_df, path_prefix, target, save_models):
     ridge_model.fit(X_full, y)
     y_pred_ridge = ridge_model.predict(X_full)
     ridge_r2 = r2_score(y, y_pred_ridge)
+    mae = mean_absolute_error(y, y_pred_ridge)
     ridge_residuals = y.values - y_pred_ridge
     
     if save_models:
@@ -405,7 +408,14 @@ def ridge_model(suggest_features, clean_df, path_prefix, target, save_models):
     except:
         pass
 
-    return ridge_r2
+    return ridge_r2, mae
+
+def baseline_model(clean_df, from_values):
+    y = clean_df["Target"].copy()
+    x = from_values.reindex(y.index).fillna(from_values.mean()).values.reshape(-1, 1)
+    reg = LinearRegression().fit(x, y)
+    y_pred = reg.predict(x)
+    return r2_score(y, y_pred), mean_absolute_error(y, y_pred)
 
 def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
     X_full = clean_df[suggest_features].copy().fillna(0)
@@ -422,6 +432,7 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
     rf_model.fit(X_full, y)
     y_pred_rf = rf_model.predict(X_full)
     rf_r2 = r2_score(y, y_pred_rf)
+    mae = mean_absolute_error(y, y_pred_rf)
     rf_residuals = y.values - y_pred_rf
     
     if save_models:
@@ -436,8 +447,10 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
     except:
         pass
 
-    return rf_r2
+    return rf_r2, mae
         
+BASELINE = True
+
 # ========== TRAINING FUNCTIONS FOR POSITION TRANSITIONS ==========
 def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_params=True, save_models=True, verbose=True, df_predictions=None):  
     # Clean column names
@@ -471,21 +484,21 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
             for dummy_col in dummies.columns:
                 df[dummy_col] = dummies[dummy_col]
                 all_z_features.append(dummy_col)
+    if not BASELINE: 
+        team_quals = TEAM_QUALS
 
-    team_quals = TEAM_QUALS
+        df_get_team = df.copy()
+        df_to_team = df.copy()
 
-    df_get_team = df.copy()
-    df_to_team = df.copy()
+        for qual in team_quals:
+            df_get_team = get_team_qualities(qual, df_get_team, "from_")
+            df_to_team = get_team_qualities(qual, df_to_team, "to_")
+            quality_col = qual.lower()
+            all_z_features.append(f"from_{quality_col}")
+            all_z_features.append(f"to_{quality_col}")
 
-    for qual in team_quals:
-        df_get_team = get_team_qualities(qual, df_get_team, "from_")
-        df_to_team = get_team_qualities(qual, df_to_team, "to_")
-        quality_col = qual.lower()
-        all_z_features.append(f"from_{quality_col}")
-        all_z_features.append(f"to_{quality_col}")
-
-        df[f"from_{quality_col}"] = df_get_team[quality_col]
-        df[f"to_{quality_col}"] = df_to_team[quality_col]
+            df[f"from_{quality_col}"] = df_get_team[quality_col]
+            df[f"to_{quality_col}"] = df_to_team[quality_col]
 
     stats_df = pd.DataFrame()
 
@@ -513,54 +526,77 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
         if len(clean_df) < 5:
             continue
         
-        if OLS:            
-            r2 = ols_model(suggest_features, clean_df, path_prefix, target, save_params)
+        if BASELINE: 
+            # Baseline: same-performance predictor (player scores same in new position)
+            base_r2, base_mae = baseline_model(clean_df, df[target_col])
+            tmp_stats = pd.DataFrame(data=[["baseline", from_pos, to_pos, base_r2, base_mae]], columns=["Model", "From position", "To position", "R^2", "MAE"])
+            file_path = "../Figures/model_evaluation/model_metrics_baseline_simple.csv"
 
-            tmp_stats = pd.DataFrame(data=[["ols", target, r2]], columns = ["Model", "Target", "R^2"])
+            if os.path.isfile(file_path):
+                tmp_stats.to_csv(file_path, mode='a', header=False, index=False)
+            else:
+                os.makedirs(os.path.dirname("../Figures/model_evaluation"), exist_ok=True)
+                tmp_stats.to_csv(file_path, mode='w', header=True, index=False)
+
+        if OLS:            
+            r2, mse = ols_model(suggest_features, clean_df, path_prefix, target, save_params)
+
+            tmp_stats = pd.DataFrame(data=[["ols", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if XGBOOST:
-            r2 = xgboost_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = xgboost_model(suggest_features, clean_df, path_prefix, target, save_models)
 
-            tmp_stats = pd.DataFrame(data=[["xgboost", target, r2]], columns = ["Model", "Target", "R^2"])
+            tmp_stats = pd.DataFrame(data=[["xgboost", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if LASSO: 
-            r2 = lasso_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = lasso_model(suggest_features, clean_df, path_prefix, target, save_models)
 
-            tmp_stats = pd.DataFrame(data=[["lasso", target, r2]], columns = ["Model", "Target", "R^2"])
+            tmp_stats = pd.DataFrame(data=[["lasso", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if RIDGE:
-            r2 = ridge_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = ridge_model(suggest_features, clean_df, path_prefix, target, save_models)
 
-            tmp_stats = pd.DataFrame(data=[["ridge", target, r2]], columns = ["Model", "Target", "R^2"])
+            tmp_stats = pd.DataFrame(data=[["ridge", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         if RF:
-            r2 = forest_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = forest_model(suggest_features, clean_df, path_prefix, target, save_models)
 
-            tmp_stats = pd.DataFrame(data=[["rf", target, r2]], columns = ["Model", "Target", "R^2"])
+            tmp_stats = pd.DataFrame(data=[["rf", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
 
-    stats_tot = stats_df.groupby("Model")["R^2"].mean().reset_index()
+    stats_mae = stats_df.groupby("Model")["MAE"].mean().reset_index()
+    stats_r2 = stats_df.groupby("Model")["R^2"].mean().reset_index()
 
-    stats_tot["from_pos"] = from_pos
+    stats_mae["from_pos"] = from_pos
 
-    stats_tot["to_pos"] = to_pos
+    stats_mae["to_pos"] = to_pos
+    stats_r2["from_pos"] = from_pos
 
-    file_path = "../Figures/model_evaluation/model_metrics_no_team_to.csv"
+    stats_r2["to_pos"] = to_pos
+
+    file_path = "../Figures/model_evaluation/model_metrics.csv"
+    file_path_r2 = "../Figures/model_evaluation/model_r_metrics.csv"
+
+    if BASELINE: 
+        file_path = "../Figures/model_evaluation/model_metrics_baseline_team.csv"
+        
+        file_path_r2 = "../Figures/model_evaluation/model_r_metrics_baseline_team.csv"
 
     if os.path.isfile(file_path):
-        stats_tot.to_csv(file_path, mode='a', header=False, index=False)
+        stats_mae.to_csv(file_path, mode='a', header=False, index=False)
+        stats_r2.to_csv(file_path_r2, mode='a', header=False, index=False)
     else:
         os.makedirs(os.path.dirname("../Figures/model_evaluation"), exist_ok=True)
-        stats_tot.to_csv(file_path, mode='w', header=True, index=False)
-
+        stats_mae.to_csv(file_path, mode='w', header=True, index=False)
+        stats_r2.to_csv(file_path_r2, mode='w', header=True, index=False)
 
 # ========== SPECIFIC POSITION TRANSITION TRAINING FUNCTIONS ==========
 
@@ -605,3 +641,9 @@ def train_mf_to_st(df, targets, save_params=True, save_models=True, verbose=True
 
 def train_mf_to_cd(df, targets, save_params=True, save_models=True, verbose=True, position=None, df_predictions=None):
     _train_position_models(df, "Midfielder", "Central Defender", targets, f"mf_to_cd", save_params, save_models, verbose, df_predictions)
+
+def train_mf_to_winger(df, targets, save_params=True, save_models=True, verbose=True, position=None, df_predictions=None):
+    _train_position_models(df, "Midfielder", "Winger", targets, f"mf_to_winger", save_params, save_models, verbose, df_predictions)
+
+def train_winger_to_mf(df, targets, save_params=True, save_models=True, verbose=True, position=None, df_predictions=None):
+    _train_position_models(df, "Winger", "Midfielder", targets, f"winger_to_mf", save_params, save_models, verbose, df_predictions)

@@ -2,22 +2,15 @@ import pandas as pd
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import statsmodels.formula.api as smf
-from scipy import stats
 
 matplotlib.use("Agg")
-import plotly.graph_objs as go
-import xgboost as xgb
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import Lasso, Ridge, LinearRegression
-from sklearn.preprocessing import StandardScaler
-import joblib
 import os
 import seaborn as sns
-import shap
-from matplotlib.patches import Patch
+
+from misc.helpers import (
+    clean_label
+)
 
 full_model = False
 quality_model = False
@@ -360,3 +353,170 @@ def create_r2_residuals_plot(valid_actuals, valid_predictions, valid_residuals, 
     os.makedirs(f"../Figures/{path}/models", exist_ok=True)
     plt.savefig(f"../Figures/{path}/models/{target_name}.png", dpi=300, bbox_inches='tight')
     plt.close()
+
+def plot_transition_diagram(tc_df, OUT_DIR):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(tc_df["transition"], tc_df["n_players"], color="darkorange")
+    ax.set_xlabel("Number of Players Predicted", fontweight="bold")
+    ax.set_title("Players Predicted per Position Transition", fontweight="bold")
+    ax.grid(axis="x", linestyle="--", alpha=0.3)
+    for i, v in enumerate(tc_df["n_players"]):
+        ax.text(v + 0.3, i, str(v), va="center", fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, "player_counts_per_transition.png"), dpi=220)
+    plt.close(fig)
+
+def plot_distribution_of_transition(counts_df, positions, n_pos, OUT_DIR):
+    fig, axes = plt.subplots(1, n_pos, figsize=(5 * n_pos, 5), squeeze=False)
+
+    for i, pos in enumerate(positions):
+        ax = axes[0][i]
+        pos_df = counts_df[counts_df["from_position"] == pos]
+        tally = pos_df["n_transitions"].value_counts().sort_index()
+        ax.bar(tally.index.astype(str), tally.values, color="steelblue")
+        ax.set_title(clean_label(pos), fontweight="bold")
+        ax.set_xlabel("# Transitions Predicted")
+        ax.set_ylabel("# Players")
+        ax.grid(axis="y", linestyle="--", alpha=0.3)
+        for x, y in zip(tally.index, tally.values):
+            ax.text(str(x), y + 0.3, str(y), ha="center", fontsize=9)
+
+    fig.suptitle(
+        "Distribution: How Many Transitions Each Player Was Predicted For",
+        fontweight="bold",
+        fontsize=13,
+    )
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(OUT_DIR, "player_transition_counts_by_position.png"), dpi=220
+    )
+    plt.close(fig)
+
+    # Also save a heatmap: source position × n_transitions
+    pivot = (
+        counts_df.groupby(["from_position", "n_transitions"])
+        .size()
+        .unstack(fill_value=0)
+    )
+    pivot.index = [clean_label(i) for i in pivot.index]
+    fig, ax = plt.subplots(figsize=(8, 4))
+    sns.heatmap(pivot, annot=True, fmt="d", cmap="YlOrRd", ax=ax)
+    ax.set_title(
+        "Player Count by Source Position and # Transitions Predicted",
+        fontweight="bold",
+    )
+    ax.set_xlabel("# Transitions Predicted")
+    ax.set_ylabel("Source Position")
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(OUT_DIR, "transition_count_heatmap.png"), dpi=220
+    )
+    plt.close(fig)
+
+def plot_switch_analysis(x, from_positions, width, stay_counts, switch_counts, OUT_DIR):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars_stay = ax.bar(
+        x - width / 2,
+        [stay_counts.get(p, 0) for p in from_positions],
+        width, label="Stay", color="steelblue",
+    )
+    bars_sw = ax.bar(
+        x + width / 2,
+        [switch_counts.get(p, 0) for p in from_positions],
+        width, label="Switch", color="darkorange",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels([clean_label(p) for p in from_positions], fontsize=10)
+    ax.set_ylabel("Number of Sampled Players", fontweight="bold")
+    ax.set_title(
+        "Predicted to Stay vs Switch Position",
+        fontweight="bold",
+    )
+    ax.legend()
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+    for bar in bars_stay:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(bar.get_x() + bar.get_width() / 2, h + 2,
+                    str(int(h)), ha="center", fontsize=8)
+    for bar in bars_sw:
+        h = bar.get_height()
+        if h > 0:
+            ax.text(bar.get_x() + bar.get_width() / 2, h + 2,
+                    str(int(h)), ha="center", fontsize=8)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, "position_switch_vs_stay.png"), dpi=220)
+    plt.close(fig)
+
+def plot_shap_features(combined_shap, labels, colors, OUT_DIR, PNG_NAME):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(labels[::-1], combined_shap.values[::-1], color=colors[::-1])
+    ax.set_xlabel("Mean SHAP Importance", fontweight="bold")
+    ax.set_title(
+        "Attributes influence",
+        fontweight="bold",
+    )
+    ax.grid(axis="x", linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, f"{PNG_NAME}.png"), dpi=220)
+    plt.close(fig)
+
+def plot_position_breakdown(cd_df, dest_counts, OUT_DIR, PNG_NAME):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # Bar chart
+    ax = axes[0]
+    colors_cd = ["darkorange" if d == "Full Back" else "steelblue" for d in dest_counts.index]
+    ax.bar([clean_label(d) for d in dest_counts.index], dest_counts.values, color=colors_cd)
+    ax.set_ylabel("Number of Sampled Players", fontweight="bold")
+    ax.set_title("Central Defender: Predicted Destination", fontweight="bold")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+    for x, y in zip([clean_label(d) for d in dest_counts.index], dest_counts.values):
+        ax.text(x, y + 2, str(y), ha="center", fontsize=9)
+
+    # Pie chart
+    ax2 = axes[1]
+    wedge_colors = ["darkorange" if d == "Full Back" else "steelblue" for d in dest_counts.index]
+    wedges, texts, autotexts = ax2.pie(
+        dest_counts.values,
+        labels=[clean_label(d) for d in dest_counts.index],
+        colors=wedge_colors,
+        autopct="%1.1f%%",
+        startangle=90,
+    )
+    for at in autotexts:
+        at.set_fontsize(10)
+    ax2.set_title("Central Defender: Destination Share", fontweight="bold")
+
+    fig.suptitle(
+        f"Where Central Defenders Are Predicted to Move\n(n={len(cd_df)} samples)",
+        fontweight="bold", fontsize=13,
+    )
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, f"{PNG_NAME}.png"), dpi=220)
+    plt.close(fig)
+
+def plot_feature_similarity(compare_df, cd_mean, fb_mean, first_pos, second_pos, OUT_DIR, PNG_NAME):
+    fig, ax = plt.subplots(figsize=(7, 7))
+    for feat, cd_val, fb_val in zip(
+        compare_df.index, cd_mean.values, fb_mean.values
+    ):
+        ax.scatter(cd_val, fb_val, color="steelblue", zorder=3)
+        ax.annotate(feat, (cd_val, fb_val), fontsize=7,
+                    xytext=(4, 2), textcoords="offset points")
+    lims = [
+        min(ax.get_xlim()[0], ax.get_ylim()[0]),
+        max(ax.get_xlim()[1], ax.get_ylim()[1]),
+    ]
+    ax.plot(lims, lims, "k--", alpha=0.4, label="y = x (perfect similarity)")
+    ax.set_xlabel(f"{first_pos} Mean Quality", fontweight="bold")
+    ax.set_ylabel(f"{second_pos} Mean Quality", fontweight="bold")
+    ax.set_title(
+        f"Feature Similarity: {first_pos} vs {second_pos}\n",
+        fontweight="bold",
+    )
+    ax.legend(fontsize=9)
+    ax.grid(linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, f"{PNG_NAME}.png"), dpi=220)
+    plt.close(fig)

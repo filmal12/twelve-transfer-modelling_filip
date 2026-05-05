@@ -1,24 +1,17 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib
-import requests
-from io import BytesIO
-from PIL import Image
-import seaborn as sns
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import joblib
 import os
 
-import plotly.graph_objects as go
+from prediction_pipeline import predict_player
+
 from helper_function import (
-    predict_player,
-    get_predefined_description,
     display_top_features,
-    normal_quals
 )
+
+from descriptors import get_predefined_description
 
 import sys
 
@@ -46,8 +39,16 @@ from data_loader import (
 st.set_page_config(page_title="Transfer Modelling", layout="wide")
 
 TYPE_ANALYSIS = "XGBOOST"
-# ========== DARK MODE STYLING ==========
 
+################################
+# Main entry point of the application
+# Using models and parameters taken from training phase 
+# Provides better runtime and quicker performance
+# Otherwise fallsback to training a quick model using the
+# type that is defined in type analysis
+################################
+
+# ========== DARK MODE STYLING ==========
 @st.cache_data
 def get_full_data():
     df_full = load_data().copy()
@@ -66,16 +67,18 @@ def get_full_data():
         df_full[f"to_{quality_col}"] = df_to[quality_col].values[0]
 
     return (df_full, competition_df)
-
+print("1")
 transfer_data, competition_data = get_full_data()
-
+print("2")
 allsvenskan_data = transfer_data[(transfer_data["from_season"] == 2025)].copy()
+print("3")
 
 mock_players = {
     row["short_name"]: {"team": row["from_team_id"], "season": row["from_season"]}
     for _, row in allsvenskan_data.drop_duplicates(subset=["short_name", "from_season"]).iterrows()
 }
 
+print("Getting data")
 
 def getTopFeatures(position):
     df_parsed = pd.DataFrame()
@@ -116,13 +119,6 @@ def getTopFeatures(position):
     
     df_parsed = df_parsed.groupby(['feature', 'To position', 'From position'], as_index=False)['importance'].mean()
     return df_parsed.loc[df_parsed.groupby('feature')['importance'].idxmax()]
-
-
-def _display_table_name(feature):
-        if feature in normal_quals:
-            return feature.replace('from_', 'Team from: ').replace('to_', 'Team to: ').replace('_', ' ').title()
-        
-        return feature.replace('from', 'Player: ').replace('_', ' ').title()
 
 st.title("Transfer Modelling")
 

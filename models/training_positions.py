@@ -1,8 +1,3 @@
-"""
-Training orchestration script for position transition models.
-This centralizes all model training (OLS, XGBoost, Ridge, Lasso, Random Forest).
-"""
-
 import pandas as pd
 import numpy as np
 from positional_model import (
@@ -14,9 +9,8 @@ from positional_model import (
     train_cd_to_mf,
     train_st_to_winger,
     train_st_to_mf,
-    train_midfielders,
-    train_striker_to_am,
-    train_defender_to_dm,
+    train_winger_to_mf,
+    train_mf_to_winger,
     train_same_position,
     train_mf_to_st,
     train_mf_to_cd
@@ -28,8 +22,6 @@ import os
 sys.path.append(os.path.abspath(".."))
 
 from data_loader import (
-    get_data,
-    get_mf,
     load_data,
 )
 
@@ -43,15 +35,17 @@ from setup import (
 
 # ========== TRAINING FLAGS ==========
 TRAIN_WINGER_STRIKER = True
-TRAIN_WINGER_FB = True
+TRAIN_WINGER_FB = False
 TRAIN_FB_CD = True
 TRAIN_FB_WINGER = True
 TRAIN_CD_FB = True
 TRAIN_CD_MF = True
 TRAIN_ST_WINGER = True
 TRAIN_ST_MF = True
-TRAIN_MIDFIELDER_STRIKER = True
+TRAIN_MIDFIELDER_STRIKER = False
 TRAIN_MIDFIELDER_CD = True
+TRAIN_WINGER_MIDFIELDER = True
+TRAIN_MIDFIELDER_WINGER = True
 
 TRAIN_ST_ST = True
 TRAIN_WINGER_WINGER = True
@@ -87,6 +81,14 @@ if TRAIN_WINGER_FB:
     df_w_fb = dropVals(df_w_fb, FB_QUALITIES)
     print(f"Samples: {len(df_w_fb)}")
     train_winger_to_fb(df_w_fb, targets=FB_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, df_predictions=predicted_df)
+
+
+if TRAIN_WINGER_MIDFIELDER:
+    print("\nWinger - MIDFIELDER")
+    df_w_fb = df[(df["from_position"] == "Winger") & (df["to_position"] == "Midfielder")].copy()
+    df_w_fb = dropVals(df_w_fb, MIDFIELDER_QUALITIES)
+    print(f"Samples: {len(df_w_fb)}")
+    train_winger_to_mf(df_w_fb, targets=MIDFIELDER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, df_predictions=predicted_df)
 
 # ========== FULL BACK POSITION TRANSITIONS ==========
 if TRAIN_FB_CD:
@@ -174,6 +176,13 @@ if TRAIN_MIDFIELDER_STRIKER:
     df_mf_st = dropVals(df_mf_st, STRIKER_QUALITIES)
     print(f"Samples: {len(df_mf_st)}")
     train_mf_to_st(df_mf_st, targets=STRIKER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Striker", df_predictions=predicted_df)
+
+if TRAIN_MIDFIELDER_WINGER:
+    print("\nMidfielder - WINGER")
+    df_mf_st = df[(df["from_position"] == "Midfielder") & (df["to_position"] == "Winger")].copy()
+    df_mf_st = dropVals(df_mf_st, WINGER_QUALITIES)
+    print(f"Samples: {len(df_mf_st)}")
+    train_mf_to_winger(df_mf_st, targets=WINGER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, df_predictions=predicted_df)
 
 if TRAIN_MIDFIELDER_CD:
     print("\nMidfielder - Central Defender")
