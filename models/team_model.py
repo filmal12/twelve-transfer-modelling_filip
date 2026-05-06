@@ -14,7 +14,7 @@ import joblib
 import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from positional_model import remove_correlated_features
+from models.positional_model import remove_correlated_features
 import shap
 
 import sys
@@ -254,8 +254,8 @@ def train_xgboost_category_model(X, y, category_name, metric_names, test_size=TE
         )
 
         if SAVE_MODELS:
-            os.makedirs(f"../team_models", exist_ok=True)
-            joblib.dump(xgb_model, f'../team_models/{metric_col}_xgboost.pkl')
+            os.makedirs(f"team_models", exist_ok=True)
+            joblib.dump(xgb_model, f'team_models/{metric_col}_xgboost.pkl')
         
         # Make predictions
         y_pred_train = xgb_model.predict(X_train)
@@ -280,11 +280,11 @@ def train_xgboost_category_model(X, y, category_name, metric_names, test_size=TE
             'importance': shap_values_xgb.mean(axis=0)
         }).sort_values('importance', ascending=False)
 
-        os.makedirs(f'../parameters/{path_prefix}', exist_ok=True)
+        os.makedirs(f'parameters/{path_prefix}', exist_ok=True)
             
-        feature_importance.to_csv(f'../parameters/{path_prefix}/{metric_col}_top_features.csv', index=False)
+        feature_importance.to_csv(f'parameters/{path_prefix}/{metric_col}_top_features.csv', index=False)
 
-        np.save(f"../parameters/{path_prefix}/{metric_col}_xgboost_shap_values.npy", shap_values_xgb)
+        np.save(f"parameters/{path_prefix}/{metric_col}_xgboost_shap_values.npy", shap_values_xgb)
 
         
         results[metric_col] = {
@@ -336,7 +336,7 @@ def train_category_models(df):
             category_lower = category.lower()
             
             for metric_col, model_result in category_results.items():
-                file_path = "../parameters/team_models/rsquared.csv"
+                file_path = "parameters/team_models/rsquared.csv"
 
                 trained_res = model_result["train_metrics"]
                 r2 = trained_res["r2"]
@@ -346,7 +346,7 @@ def train_category_models(df):
                 if os.path.isfile(file_path):
                     stats_tot.to_csv(file_path, mode='a', header=False, index=False)
                 else:
-                    os.makedirs(os.path.dirname("../parameters/team_models"), exist_ok=True)
+                    os.makedirs(os.path.dirname("parameters/team_models"), exist_ok=True)
                     stats_tot.to_csv(file_path, mode='w', header=True, index=False)
 
         results[category] = {
@@ -407,11 +407,11 @@ def plot_feature_importance(feature_importance_df, shap_values, X_train, path_pr
         data=X_train.values[:, top_15_idx],
         feature_names=clean_names
     )
-    os.makedirs(f"../Figures/{path_prefix}/features", exist_ok=True)
+    os.makedirs(f"Figures/{path_prefix}/features", exist_ok=True)
     plt.figure(figsize=(10, 8))
     shap.plots.beeswarm(shap_explanation_top15, show=False, max_display=15)
     plt.tight_layout()
-    plt.savefig(f"../Figures/{path_prefix}/features/{y_metric}_xgboost_beeswarm.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"Figures/{path_prefix}/features/{y_metric}_xgboost_beeswarm.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     shap_df = pd.DataFrame({'feature': X_train.columns, 'importance': shap_importance})
@@ -423,7 +423,7 @@ def plot_feature_importance(feature_importance_df, shap_values, X_train, path_pr
     plt.xlabel('Mean |SHAP value|', fontweight='bold')
     plt.title(f'Top 10 Features - XGBoost: {y_metric}', fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f"../Figures/{path_prefix}/features/{y_metric}_xgboost_shap.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"Figures/{path_prefix}/features/{y_metric}_xgboost_shap.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     plt.figure(figsize=(10, 6))
@@ -431,7 +431,7 @@ def plot_feature_importance(feature_importance_df, shap_values, X_train, path_pr
     plt.xlabel('Mean |SHAP value|', fontweight='bold')
     plt.title(f'Bottom 10 Features - XGBoost: {y_metric}', fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f"../Figures/{path_prefix}/features/{y_metric}_xgboost_shap_bottom.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"Figures/{path_prefix}/features/{y_metric}_xgboost_shap_bottom.png", dpi=300, bbox_inches='tight')
     plt.close()
 
 def team_scatter_plots(df, quality_type, metric, top_features):
@@ -470,8 +470,8 @@ def team_scatter_plots(df, quality_type, metric, top_features):
         ax.set_title(f"{clean_tq.capitalize()} vs {feature_label}", fontsize=13, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.4)
         fig.tight_layout()
-        os.makedirs(f"../Figures/team_models/metric_analysis/{metric}", exist_ok=True)
-        fig.savefig(f"../Figures/team_models/metric_analysis/{metric}/{feature}.png", dpi=150, bbox_inches="tight")
+        os.makedirs(f"Figures/team_models/metric_analysis/{metric}", exist_ok=True)
+        fig.savefig(f"Figures/team_models/metric_analysis/{metric}/{feature}.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
 def main():
@@ -520,7 +520,7 @@ def main():
                     category_lower = category.lower()
                     # Subdirectory based on metric or quality
                     subdir = "quality" if QUALITIES else "metric"
-                    os.makedirs(f"../Figures/team_models/{category_lower}/{subdir}", exist_ok=True)
+                    os.makedirs(f"Figures/team_models/{category_lower}/{subdir}", exist_ok=True)
                     
                     # Performance plot
                     plot_model_performance(

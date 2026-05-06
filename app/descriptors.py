@@ -69,7 +69,7 @@ def __get_attribute_category(feature_names):
     return CATEGORY_LABELS.get(dominant_cat, "general")
 
 def generate_transition_description(from_position, to_position, path_prefix, target_qual):
-    params_dir = f"../parameters/{path_prefix}"
+    params_dir = f"parameters/{path_prefix}"
 
     all_player_impacts = {}
     all_team_to_impacts = {}

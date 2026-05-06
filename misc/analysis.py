@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from helpers import (
+from misc.helpers import (
     clean_label,
     clean_feature_label,
     add_team_features,
@@ -54,7 +54,7 @@ MODEL_PRIORITY = ["xgboost"]
 
 TEAM_FEATURE_QUALS = TEAM_QUALS  # from setup.py
 
-OUT_DIR = "../Figures/prediction_analysis"
+OUT_DIR = "Figures/prediction_analysis"
 
 def _run_position_switch_analysis(
     full_df: pd.DataFrame,

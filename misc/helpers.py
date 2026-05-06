@@ -78,7 +78,7 @@ def get_model_importance(model, feature_names):
 
 
 def load_shap_importance(path_key, target):
-    csv_path = f"../parameters/{path_key}/{target}_top_features.csv"
+    csv_path = f"parameters/{path_key}/{target}_top_features.csv"
     if not os.path.exists(csv_path):
         return None
     df = pd.read_csv(csv_path)

@@ -11,9 +11,9 @@ import os
 import sys
 import matplotlib.pyplot as plt
 
-from descriptors import generate_player_transition_description
+from app.descriptors import generate_player_transition_description
 
-from helper_function import (
+from app.helper_function import (
     display_position_change,
     create_top_features_radar
 )
@@ -81,9 +81,9 @@ def predict_player(player_name, season, df_full, competition_data):
 
         pos_scores = {}
         for target in target_quals:
-            model_path = f"../parameters/{path}/{target}_xgboost.pkl"
+            model_path = f"parameters/{path}/{target}_xgboost.pkl"
             if MODEL_TYPE == "OLS":
-                model_path = f"../parameters/{path}/{target}.csv"
+                model_path = f"parameters/{path}/{target}.csv"
         
             if os.path.exists(model_path):
                 try:
@@ -131,9 +131,9 @@ def predict_player(player_name, season, df_full, competition_data):
     current_quality_values = {}
     qualities_same = POSITION_QUALITIES[from_pos]
     for qual in qualities_same:
-        path = f"../parameters/same_position/{from_pos}/{qual}_xgboost.pkl"
+        path = f"parameters/same_position/{from_pos}/{qual}_xgboost.pkl"
         if MODEL_TYPE == "OLS":
-            path = f"../parameters/same_position/{from_pos}/{qual}.csv"
+            path = f"parameters/same_position/{from_pos}/{qual}.csv"
 
         if os.path.exists(path):
             try:
@@ -193,7 +193,7 @@ def predict_player(player_name, season, df_full, competition_data):
     # Team improvement predictions
     team_impr = {}
     for target in TEAM_QUALS:
-        model_path = f"../team_models/delta_{target}_xgboost.pkl"
+        model_path = f"team_models/delta_{target}_xgboost.pkl"
         if os.path.exists(model_path):
             try:
                 xgb_model = joblib.load(model_path)

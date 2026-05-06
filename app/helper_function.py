@@ -73,9 +73,9 @@ def create_top_features_radar(player_row, player_name, best_position, best_score
         return None
 
     if best_position == source_position:
-        features_csv_path = f"../parameters/same_position/{best_position}/{target_name}_top_features.csv"
+        features_csv_path = f"parameters/same_position/{best_position}/{target_name}_top_features.csv"
     else:
-        features_csv_path = f"../parameters/{position_prefix}/{target_name}_top_features.csv"
+        features_csv_path = f"parameters/{position_prefix}/{target_name}_top_features.csv"
     if not os.path.exists(features_csv_path):
         return None
 

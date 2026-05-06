@@ -134,14 +134,14 @@ def create_radar_plot_top_features(shap_values, X, predictions, top_n=5, target_
         ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.1), fontsize=11)
         
         plt.tight_layout()
-        os.makedirs(f"../Figures/{path}/xgboost_predictions/{folder_path}", exist_ok=True)
+        os.makedirs(f"Figures/{path}/xgboost_predictions/{folder_path}", exist_ok=True)
         
         # Use player name in filename if available
         filename = f"{target_name}_radar_top_features.png"
         if player_name:
             filename = f"{target_name}_radar_{player_name.replace(' ', '_')}.png"
             
-        plt.savefig(f"../Figures/{path}/xgboost_predictions/{folder_path}/{filename}", dpi=300, bbox_inches='tight')
+        plt.savefig(f"Figures/{path}/xgboost_predictions/{folder_path}/{filename}", dpi=300, bbox_inches='tight')
         plt.close()
         
         print(f"Radar plot created for player (index {player_idx}) with top {top_n} features based on SHAP importance")
@@ -180,7 +180,7 @@ def print_stats(valid_actuals, valid_predictions, valid_residuals, target_name, 
 
 def evaluate_model_performance(models_dict, X_test, y_test, target_name="", output_folder="Statistics"):    
     # Create output directory
-    output_path = f"../Figures/{output_folder}"
+    output_path = f"Figures/{output_folder}"
     os.makedirs(output_path, exist_ok=True)
     
     performance_data = []
@@ -211,7 +211,7 @@ def evaluate_model_performance(models_dict, X_test, y_test, target_name="", outp
     performance_df = pd.DataFrame(performance_data)
     
     # Save as CSV
-    csv_path = f"../{output_path}/model_performance_metrics_{target_name}.csv" if target_name else f"../{output_path}/model_performance_metrics.csv"
+    csv_path = f"{output_path}/model_performance_metrics_{target_name}.csv" if target_name else f"{output_path}/model_performance_metrics.csv"
     performance_df.to_csv(csv_path, index=False)
     
     # Create summary visualization
@@ -271,7 +271,7 @@ def evaluate_model_performance(models_dict, X_test, y_test, target_name="", outp
     plt.tight_layout()
     
     # Save figure
-    fig_path = f"../{output_path}/model_performance_comparison_{target_name}.png" if target_name else f"{output_path}/model_performance_comparison.png"
+    fig_path = f"{output_path}/model_performance_comparison_{target_name}.png" if target_name else f"{output_path}/model_performance_comparison.png"
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -279,7 +279,7 @@ def evaluate_model_performance(models_dict, X_test, y_test, target_name="", outp
 
 def plot_model_comparison(models_performance_dict, output_folder="Statistics"):    
     # Create output directory
-    output_path = f"../Figures/{output_folder}"
+    output_path = f"Figures/{output_folder}"
     os.makedirs(output_path, exist_ok=True)
     
     # Combine all performance data
@@ -316,12 +316,12 @@ def plot_model_comparison(models_performance_dict, output_folder="Statistics"):
     plt.tight_layout()
     
     # Save figure
-    fig_path = f"../{output_path}/all_models_comparison.png"
+    fig_path = f"{output_path}/all_models_comparison.png"
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     # Save combined data
-    csv_path = f"../{output_path}/all_models_performance.csv"
+    csv_path = f"{output_path}/all_models_performance.csv"
     combined_df.to_csv(csv_path, index=False)
 
 def create_r2_residuals_plot(valid_actuals, valid_predictions, valid_residuals, r2, target_name="", path=""):
@@ -350,8 +350,8 @@ def create_r2_residuals_plot(valid_actuals, valid_predictions, valid_residuals, 
     plt.tight_layout()
     
     # Save figure
-    os.makedirs(f"../Figures/{path}/models", exist_ok=True)
-    plt.savefig(f"../Figures/{path}/models/{target_name}.png", dpi=300, bbox_inches='tight')
+    os.makedirs(f"Figures/{path}/models", exist_ok=True)
+    plt.savefig(f"Figures/{path}/models/{target_name}.png", dpi=300, bbox_inches='tight')
     plt.close()
 
 def plot_transition_diagram(tc_df, OUT_DIR):

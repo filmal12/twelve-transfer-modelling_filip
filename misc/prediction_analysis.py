@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from helpers import (
+from misc.helpers import (
     clean_label,
     clean_feature_label,
     add_team_features,
@@ -20,19 +20,18 @@ from helpers import (
     predict_safe
 )
 
-from analysis import (
+from misc.analysis import (
     _run_position_switch_analysis,
     analyze_top_shap_cooccurrence
 )
 
-from plots import (
+from misc.plots import (
     plot_transition_diagram,
     plot_distribution_of_transition,
     plot_switch_analysis,
     plot_shap_features,
     plot_position_breakdown,
     plot_feature_similarity,
-    create_improvement_plot
 )
 
 sys.path.append(os.path.abspath(".."))
@@ -79,8 +78,6 @@ def run_analysis():
 
     full_df = load_data()
     full_df = add_team_features(full_df)
-
-    create_improvement_plot()
 
     has_player_id = "wy_player_id" in full_df.columns
 
@@ -194,7 +191,7 @@ def run_analysis():
 
         positions = sorted(counts_df["from_position"].unique())
         n_pos = len(positions)
-        plot_distribution_of_transition(counts_df, positions, n_pos)
+        plot_distribution_of_transition(counts_df, positions, n_pos, OUT_DIR)
 
     # Position switch analysis (n samples per position)
     print("\n Running position switch analysis (1000 samples per position)")
@@ -258,7 +255,7 @@ def run_analysis():
         if not cd_df.empty:
             dest_counts = cd_df["best_to_position"].value_counts()
 
-            plot_position_breakdown(cd_df, dest_counts, "cd_destination_breakdown")
+            plot_position_breakdown(cd_df, dest_counts, OUT_DIR, "dest_breakdown")
 
     # Feature correlation CD vs FB players
     # Show how similar CDs and FBs are across IND_VARS, explaining why CD models

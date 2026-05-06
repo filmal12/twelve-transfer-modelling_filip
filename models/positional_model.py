@@ -81,7 +81,7 @@ def plot_stats(coefficients_sorted, quality_cols, quality_name, path, df_clean, 
         plt.legend(handles=legend_elements, loc='best')
         
         plt.tight_layout()
-        plt.savefig(f"../Figures/{path}/{pos}_{quality_name.lower()}.png", dpi=300, bbox_inches='tight')
+        plt.savefig(f"Figures/{path}/{pos}_{quality_name.lower()}.png", dpi=300, bbox_inches='tight')
         plt.close()
     else:
         predictions = linear_model.predict(df_clean)
@@ -102,7 +102,7 @@ def plot_stats(coefficients_sorted, quality_cols, quality_name, path, df_clean, 
         plt.grid(alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig(f"../Figures/{path}/{pos}_{quality_name.lower()}.png", dpi=300, bbox_inches='tight')
+        plt.savefig(f"Figures/{path}/{pos}_{quality_name.lower()}.png", dpi=300, bbox_inches='tight')
         plt.close()
     if PRINT:
         # Print summary
@@ -181,9 +181,9 @@ def createShapPlot(model, X, model_type, target, path_prefix):
     plt.barh(shap_df['feature'].str.replace('from_z_score_', '').str.replace('_', ' '), shap_df['importance'], color='coral')
     plt.xlabel('Mean SHAP', fontweight='bold')
     plt.title(f'Top 10 Features - {model_type}: {target}', fontweight='bold')
-    os.makedirs(f"../Figures/{path_prefix}/features", exist_ok=True)
+    os.makedirs(f"Figures/{path_prefix}/features", exist_ok=True)
     plt.tight_layout()
-    plt.savefig(f"../Figures/{path_prefix}/features/{target}_lasso_shap.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"Figures/{path_prefix}/features/{target}_lasso_shap.png", dpi=300, bbox_inches='tight')
     plt.close()
 
 OLS = True
@@ -241,7 +241,7 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
     ols_predictions = ols_model.predict(clean_df)
     mae = mean_absolute_error(clean_df["Target"], ols_predictions)
     ols_residuals = clean_df["Target"].values - ols_predictions.values
-    os.makedirs(f"../Figures/{path_prefix}", exist_ok=True)
+    os.makedirs(f"Figures/{path_prefix}", exist_ok=True)
     create_r2_residuals_plot(clean_df["Target"].values, ols_predictions.values, ols_residuals, ols_r2, f"{target}_ols", path_prefix)
     
     # Create SHAP plot for OLS
@@ -251,8 +251,8 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
         pass
     
     if save_params:
-        os.makedirs(f"../parameters/{path_prefix}", exist_ok=True)
-        joblib.dump(ols_model, f'../parameters/{path_prefix}/{target}_ols.pkl')
+        os.makedirs(f"parameters/{path_prefix}", exist_ok=True)
+        joblib.dump(ols_model, f'parameters/{path_prefix}/{target}_ols.pkl')
         params_df = pd.DataFrame(columns=['Factor', 'mean', 'min', 'max'])
         bse = ols_model.bse
         b = ols_model.params
@@ -268,7 +268,7 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
             })
             params_df = pd.concat([params_df, param_row], ignore_index=True)
         
-        params_df.to_csv(f'../parameters/{path_prefix}/{target}.csv', index=False)
+        params_df.to_csv(f'parameters/{path_prefix}/{target}.csv', index=False)
 
     return ols_r2, mae
 
@@ -326,7 +326,7 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
     # df_predictions = pd.concat([df_predictions, X_full.assign(Target=y, Prediction=xgb_model.predict(X_full), Model=f"{target}_xgboost")], ignore_index=True)
     
     # Create residual plot for XGBoost
-    os.makedirs(f"../Figures/{path_prefix}", exist_ok=True)
+    os.makedirs(f"Figures/{path_prefix}", exist_ok=True)
     create_r2_residuals_plot(y.values, y_pred_xgb, xgb_residuals, xgb_r2, f"{target}_xgboost", path_prefix)
     print(f"\nTarget: {target} - R^2: {xgb_r2:.4f}\n")
 
@@ -336,7 +336,7 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
         shap_values_xgb = explainer_xgb.shap_values(X_full)
         shap_importance_xgb = np.abs(shap_values_xgb).mean(axis=0)
 
-        np.save(f"../parameters/{path_prefix}/{target}_xgboost_shap_values.npy", shap_values_xgb)
+        np.save(f"parameters/{path_prefix}/{target}_xgboost_shap_values.npy", shap_values_xgb)
         
         shap_df_xgb = pd.DataFrame({
             'feature': X_full.columns,
@@ -344,15 +344,15 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
         }).sort_values('importance', ascending=True)
 
         if save_models:
-            os.makedirs(f"../parameters/{path_prefix}", exist_ok=True)
-            joblib.dump(xgb_model, f'../parameters/{path_prefix}/{target}_xgboost.pkl')
+            os.makedirs(f"parameters/{path_prefix}", exist_ok=True)
+            joblib.dump(xgb_model, f'parameters/{path_prefix}/{target}_xgboost.pkl')
             
             feature_importance = pd.DataFrame({
                 'feature': X_full.columns.tolist(),
                 'importance': shap_values_xgb.mean(axis=0)
             }).sort_values('importance', ascending=False)
             
-            feature_importance.to_csv(f'../parameters/{path_prefix}/{target}_top_features.csv', index=False)
+            feature_importance.to_csv(f'parameters/{path_prefix}/{target}_top_features.csv', index=False)
 
             createShapPlot(xgb_model, X_full, "xgboost", target, path_prefix)
     except Exception as e:
@@ -372,7 +372,7 @@ def lasso_model(suggest_features, clean_df, path_prefix, target, save_models):
     lasso_residuals = y.values - y_pred_lasso
     
     if save_models:
-        joblib.dump(lasso_model, f'../parameters/{path_prefix}/{target}_lasso.pkl')
+        joblib.dump(lasso_model, f'parameters/{path_prefix}/{target}_lasso.pkl')
     
     # Create residual plot for Lasso
     create_r2_residuals_plot(y.values, y_pred_lasso, lasso_residuals, lasso_r2, f"{target}_lasso", path_prefix)
@@ -397,7 +397,7 @@ def ridge_model(suggest_features, clean_df, path_prefix, target, save_models):
     ridge_residuals = y.values - y_pred_ridge
     
     if save_models:
-        joblib.dump(ridge_model, f'../parameters/{path_prefix}/{target}_ridge.pkl')
+        joblib.dump(ridge_model, f'parameters/{path_prefix}/{target}_ridge.pkl')
     
     # Create residual plot for Ridge
     create_r2_residuals_plot(y.values, y_pred_ridge, ridge_residuals, ridge_r2, f"{target}_ridge", path_prefix)
@@ -436,7 +436,7 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
     rf_residuals = y.values - y_pred_rf
     
     if save_models:
-        joblib.dump(rf_model, f'../parameters/{path_prefix}/{target}_randomforest.pkl')
+        joblib.dump(rf_model, f'parameters/{path_prefix}/{target}_randomforest.pkl')
     
     # Create residual plot for Random Forest
     create_r2_residuals_plot(y.values, y_pred_rf, rf_residuals, rf_r2, f"{target}_randomforest", path_prefix)
@@ -450,6 +450,22 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
     return rf_r2, mae
         
 BASELINE = True
+
+def parse_competition_deltas(df):
+    from_quality_cols = [c for c in df.columns if "z_score" in c]
+    df["_from_quality"] = df[from_quality_cols].mean(axis=1) if from_quality_cols else 0
+    from_comp_strength = df.groupby("from_competition_name")["_from_quality"].mean()
+
+    # To: use the actual to-position quality scores per competition
+    to_target_cols = [f"to_{t}" for t in targets if f"to_{t}" in df.columns]
+    df["_to_quality"] = df[to_target_cols].mean(axis=1) if to_target_cols else 0
+    to_comp_strength = df.groupby("to_competition_name")["_to_quality"].mean()
+
+    df["from_comp_strength"] = df["from_competition_name"].map(from_comp_strength)
+    df["to_comp_strength"] = df["to_competition_name"].map(to_comp_strength)
+    df["competition_delta"] = df["to_comp_strength"] - df["from_comp_strength"]
+
+    return df
 
 # ========== TRAINING FUNCTIONS FOR POSITION TRANSITIONS ==========
 def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_params=True, save_models=True, verbose=True, df_predictions=None):  
@@ -471,19 +487,12 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
     all_z_features.append("player_season_age_scaled")
     all_z_features.append("wyscout_height_scaled")
 
-    # One-hot encode competition columns; competitions with fewer than min_comp_freq
-    # appearances are grouped into "Other" to avoid sparse, uninformative dummies.
-    min_comp_freq = max(5, len(df) // 20)
-    for comp_col in ["from_competition_name", "to_competition_name"]:
-        if comp_col in df.columns:
-            freq = df[comp_col].value_counts()
-            valid_comps = freq[freq >= min_comp_freq].index
-            col_filtered = df[comp_col].where(df[comp_col].isin(valid_comps), other="Other")
-            dummies = pd.get_dummies(col_filtered, prefix=comp_col, drop_first=True, dtype=float)
-            dummies.columns = dummies.columns.astype(str).str.replace(r"[^a-zA-Z0-9_]", "_", regex=True)
-            for dummy_col in dummies.columns:
-                df[dummy_col] = dummies[dummy_col]
-                all_z_features.append(dummy_col)
+    
+    df = parse_competition_deltas(df)
+    all_z_features.append("competition_delta")
+
+    all_z_features.append("competition_delta")
+
     if not BASELINE: 
         team_quals = TEAM_QUALS
 
@@ -530,12 +539,12 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
             # Baseline: same-performance predictor (player scores same in new position)
             base_r2, base_mae = baseline_model(clean_df, df[target_col])
             tmp_stats = pd.DataFrame(data=[["baseline", from_pos, to_pos, base_r2, base_mae]], columns=["Model", "From position", "To position", "R^2", "MAE"])
-            file_path = "../Figures/model_evaluation/model_metrics_baseline_simple.csv"
+            file_path = "Figures/model_evaluation/model_metrics_baseline_simple.csv"
 
             if os.path.isfile(file_path):
                 tmp_stats.to_csv(file_path, mode='a', header=False, index=False)
             else:
-                os.makedirs(os.path.dirname("../Figures/model_evaluation"), exist_ok=True)
+                os.makedirs(os.path.dirname("Figures/model_evaluation"), exist_ok=True)
                 tmp_stats.to_csv(file_path, mode='w', header=True, index=False)
 
         if OLS:            
@@ -582,19 +591,19 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
 
     stats_r2["to_pos"] = to_pos
 
-    file_path = "../Figures/model_evaluation/model_metrics.csv"
-    file_path_r2 = "../Figures/model_evaluation/model_r_metrics.csv"
+    file_path = "Figures/model_evaluation/model_metrics.csv"
+    file_path_r2 = "Figures/model_evaluation/model_r_metrics.csv"
 
     if BASELINE: 
-        file_path = "../Figures/model_evaluation/model_metrics_baseline_team.csv"
+        file_path = "Figures/model_evaluation/model_metrics_baseline_team.csv"
         
-        file_path_r2 = "../Figures/model_evaluation/model_r_metrics_baseline_team.csv"
+        file_path_r2 = "Figures/model_evaluation/model_r_metrics_baseline_team.csv"
 
     if os.path.isfile(file_path):
         stats_mae.to_csv(file_path, mode='a', header=False, index=False)
         stats_r2.to_csv(file_path_r2, mode='a', header=False, index=False)
     else:
-        os.makedirs(os.path.dirname("../Figures/model_evaluation"), exist_ok=True)
+        os.makedirs(os.path.dirname("Figures/model_evaluation"), exist_ok=True)
         stats_mae.to_csv(file_path, mode='w', header=True, index=False)
         stats_r2.to_csv(file_path_r2, mode='w', header=True, index=False)
 
