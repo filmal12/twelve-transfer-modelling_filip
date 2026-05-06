@@ -452,12 +452,13 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
 BASELINE = True
 
 def parse_competition_deltas(df):
-    from_quality_cols = [c for c in df.columns if "z_score" in c]
+    from_quality_cols = [c for c in df.columns if c in IND_VARS]
     df["_from_quality"] = df[from_quality_cols].mean(axis=1) if from_quality_cols else 0
     from_comp_strength = df.groupby("from_competition_name")["_from_quality"].mean()
 
+    TO_IND_VARS = [c.replace("from", "to") for c in IND_VARS]
     # To: use the actual to-position quality scores per competition
-    to_target_cols = [f"to_{t}" for t in targets if f"to_{t}" in df.columns]
+    to_target_cols = [c for c in df.columns if c in TO_IND_VARS ]
     df["_to_quality"] = df[to_target_cols].mean(axis=1) if to_target_cols else 0
     to_comp_strength = df.groupby("to_competition_name")["_to_quality"].mean()
 
@@ -489,8 +490,6 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
 
     
     df = parse_competition_deltas(df)
-    all_z_features.append("competition_delta")
-
     all_z_features.append("competition_delta")
 
     if not BASELINE: 

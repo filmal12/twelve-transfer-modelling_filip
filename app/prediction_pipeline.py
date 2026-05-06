@@ -15,7 +15,8 @@ from app.descriptors import generate_player_transition_description
 
 from app.helper_function import (
     display_position_change,
-    create_top_features_radar
+    create_top_features_radar,
+    get_competition_average
 )
 
 sys.path.append(os.path.abspath(".."))
@@ -225,11 +226,13 @@ def predict_player(player_name, season, df_full, competition_data):
     # Radar plot for best transition
     position_prefix = None
     target_name = None
+    comp_average = 0
     if best_position in transition_targets:
         position_prefix = f"{POS_ABBREV[from_pos]}_to_{POS_ABBREV[best_position]}"
         target_name = transition_targets[best_position]
 
-
+        comp_average = get_competition_average(df_full, 808, best_position, target_name)
+        delta_def = (transition_scores[best_position] - comp_average) > 0
     col1, col2 = st.columns(2, vertical_alignment="top")
     with col1:
         non_conclusive = all(score > 0.5 for score in positions.values())
@@ -246,7 +249,7 @@ def predict_player(player_name, season, df_full, competition_data):
 
                 has_second_position = True
 
-        description = generate_player_transition_description(player_name, from_pos, best_position, df_full, target_name, non_conclusive, has_second_position, second_position, second_position_target)
+        description = generate_player_transition_description(player_name, from_pos, best_position, df_full, target_name, non_conclusive, has_second_position, second_position, second_position_target, delta_def)
         st.markdown(f"### Transition Analysis")
         st.markdown(description)    
 

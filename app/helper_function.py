@@ -481,6 +481,18 @@ def display_top_features(df_features, from_pos):
 
     return fig
 
+def get_competition_average(df, comp, position, quality):
+    df_parsed_from = df.loc[(df["from_competition"] == comp) & (df["from_position"] == position) & (df["from_season"] == 2025)]
+    
+    df_parsed_to = df.loc[(df["to_competition"] == comp) & (df["to_position"] == position) & (df["to_season"] == 2025)]
+    print(df_parsed_from, position)
+    from_comp_strength = df_parsed_from[f"from_{quality}"].mean()
+
+    to_comp_strength = df_parsed_to[f"to_{quality}"].mean()
+
+    total_strength = (from_comp_strength + to_comp_strength) / 2
+
+    return total_strength
 def prepare_player_df(df_full, player_name, season):
     player_df = df_full[
         (df_full["short_name"] == player_name) & (df_full["from_season"] == season)

@@ -70,6 +70,7 @@ def get_full_data():
 
 def main():
     transfer_data, competition_data = get_full_data()
+    print(competition_data)
 
     allsvenskan_data = transfer_data[(transfer_data["from_season"] == 2025)].copy()
 

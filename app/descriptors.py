@@ -154,7 +154,7 @@ def generate_transition_description(from_position, to_position, path_prefix, tar
     overall_summary = " ".join(summary_parts) if summary_parts else ""
     return overall_summary, quality_descriptions
 
-def generate_player_transition_description(player_name, from_position, to_position, df_full, quality, non_conclusive, two_positions=False, other_position=None, other_position_target=None):
+def generate_player_transition_description(player_name, from_position, to_position, df_full, quality, non_conclusive, two_positions=False, other_position=None, other_position_target=None, delta_def =None):
     """Generate a natural language description of the player's suitability for the transition."""
     same_position = from_position == to_position
 
@@ -196,6 +196,14 @@ def generate_player_transition_description(player_name, from_position, to_positi
         parsed_desc = desc_player.get(other_position_target, "No specific insights for this quality.")
 
         general_desc += second_desc + parsed_desc
+
+    if delta_def is not None:
+        string_def_competition = "better" if delta_def == True else "worse"
+
+        comp_desc = f"\n\nWhen comparing the player to the other players in the same position with the same quality, {player_name} would perform {string_def_competition} than his competition in the position in which the model sway the player towards."
+
+        general_desc += comp_desc
+
     return general_desc
 
 def get_predefined_description(position):
@@ -250,13 +258,5 @@ def get_predefined_description(position):
         " as well as the build up play which the full back is a part of. Playing wide in the defensive line usually requires a lot of tracking back and defensive attendance, while it's a position that also "\
         "wants a player that has the ability to go forward an be part in the offensive attacks. \n\n" \
     
-    return "A winger that is good while progressing with the ball, good one on one and carrying the ball forward" \
-    "should stay out on the wing. As these traits are often linked to players ability to create chances, which is very much needed on the wing. "\
-    "Being good infront of goal is also a trait that usually suits the winger"\
-    ", as their presence infront of goal is also needed in the offensive areas. \n\n" \
-    "A winger that is more involved in the game while also good defensively at winning the ball back is more suited to play the full back position. These are traits that favor both the defensive aspect of the game"\
-    " as well as the build up play which the full back is a part of. Playing wide in the defensive line usually requires a lot of tracking back and defensive attendance, while it's a position that also "\
-    "wants a player that has the ability to go forward an be part in the offensive attacks. \n\n" \
-    "Lastly, a winger that is more progressive going forward, showing signs of wanting to move into the box and is good infront of goal is more suited to play Striker. The striker role requires players that has abilities"\
-    "that will make them counter the defenders inside the box. As well as this the striker should also be fearless infront of goal and always be available for the final pass. Therefore traits such as box-threat, poaching and composure" \
-    "are needed. "
+    return "As a winger, moving to a midfielder position and succeeding is rarely encountered. While being a winger that is good on the ball as well in movement should stay out on the wing. \n\n" \
+    "However, being a winger that shows better signs in front of goal and also being more involved and composed forward should move up to the striker position as they will have the most success there.  "
