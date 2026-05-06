@@ -60,6 +60,32 @@ def _parse_ols_features(ols_df):
     team_to_pos.sort(key=lambda x: x[1], reverse=True)
     return player_pos, player_neg, team_to_pos, team_to_neg, team_from_features
 
+def _parse_xgboost_features(xg_df):
+    player_pos, player_neg = [], []
+    team_to_pos, team_to_neg = [], []
+    team_from_features = []
+
+    for _, row in xg_df.iterrows():
+        feature = row["feature"]
+        coeff = row["importance"]
+
+        if feature.startswith("to_"):
+            suffix = feature[3:]
+            if suffix in TEAM_QUALITY_SUFFIXES:
+                (team_to_pos if coeff > 0 else team_to_neg).append((feature, coeff))
+        elif feature.startswith("from_"):
+            suffix = feature[5:]
+            if suffix in TEAM_QUALITY_SUFFIXES:
+                team_from_features.append((feature, coeff))
+            else:
+                (player_pos if coeff > 0 else player_neg).append((suffix, coeff))
+
+    player_pos.sort(key=lambda x: x[1], reverse=True)
+    player_neg.sort(key=lambda x: x[1])
+    team_to_pos.sort(key=lambda x: x[1], reverse=True)
+    return player_pos, player_neg, team_to_pos, team_to_neg, team_from_features
+
+
 def __get_attribute_category(feature_names):
     categories = {"offensive": 0, "creative": 0, "defensive": 0, "general": 0}
     for feat in feature_names:
@@ -76,11 +102,11 @@ def generate_transition_description(from_position, to_position, path_prefix, tar
     quality_descriptions = {}
 
     target = target_qual
-    ols_path = os.path.join(params_dir, f"{target}.csv")
-    if not os.path.exists(ols_path):
+    xg_path = os.path.join(params_dir, f"{target}_top_features.csv")
+    if not os.path.exists(xg_path):
         return None, None
-    ols_df = pd.read_csv(ols_path)
-    player_pos, player_neg, team_to_pos, team_to_neg, _ = _parse_ols_features(ols_df)
+    xg_df = pd.read_csv(xg_path)
+    player_pos, player_neg, team_to_pos, team_to_neg, _ = _parse_xgboost_features(xg_df)
 
     # Accumulate for overall summary
     for feat, coeff in player_pos + player_neg:
@@ -208,55 +234,24 @@ def generate_player_transition_description(player_name, from_position, to_positi
 
 def get_predefined_description(position):
     if position == "Striker":
-        return "In general a Striker that carries the ball into the box, is calm with the ball and comfortable making decisions, " \
-        "is good infront of goal and goes to a team that plays more counter attacking football is more suited as a winger. These traits are usually something that a striker possess, but" \
-        " being dominant in them might mean that the player is more suited playing wide As these traits are often linked to players ability to create chances, which is very much needed on the wing. "\
-        "Being good infront of goal is also a trait that usually suits the winger \n\n" \
-        "While a striker that is better on the ball and plays deeper down and distributes the ball is more suited as a midfielder. Playing as a midfielder often means being apart of the build up of the game, being a player that thrives with having the ball and a player that "\
-        "is comfortable in making decision. If a striker is dominant in these traits, moving them down the field and letting them be a bigger part of the team is most likely the best option. \n\n" \
-        "To continue their success as a striker the player needs to show good composure and play infront of goal."\
-        " The striker role requires players that has abilities"\
-        "that will make them counter the defenders inside the box. As well as this the striker should also be fearless infront of goal and always be available for the final pass. Therefore traits such as box-threat, poaching and composure" \
-        "are needed."
+        return "In general for the Striker its clear to see that having attributes that are more attributed to the defensive part of the game, as well as having strong values within passing qualities, generally means that the striker should move towards the midfielder position to experienc the most success. \n\n" \
+            " While being a striker with a skill-set that is more appropriate to movement, such as run quality and involvement, points toward a fit more likely to succeed as a winger." \
+            "Staying as a striker is usually better when the player shows qualities in box-threat, pressing and providing teammates. "
+
 
     if position == "Midfielder":
-        return "A midfielder that shows a good sign in attributes that regards play infront of goal and how a player moves between the lines is suited to play striker. \n\n" \
-        " The striker role requires players that has abilities"\
-        "that will make them counter the defenders inside the box. As well as this the striker should also be fearless infront of goal and always be available for the final pass. Therefore traits such as box-threat, poaching and composure" \
-        "are needed." \
-        "While a midfielder that shows more security in defending and is better in the air should play as a Central Defender." \
-        " Playing as a central defender requires defensive traits, as well as understanding of the game. Being able to win the ball back is crucial, "\
-        "but also being able to read the game and understand when to retrieve the ball and minimizing wrongdoings during a game is also important. " \
-        "Therefore, midfielders that exceeds in these traits are more likely to succeed as central defenders. \n\n"\
-        "A midfielder should stay in midfield if they are good on the ball, and shows signs of being involved in the game more." \
-        "Playing as a midfielder often means being apart of the build up of the game, being a player that thrives with having the ball and a player that "\
-        "is comfortable in making decision. If a striker is dominant in these traits, moving them down the field and letting them be a bigger part of the team is most likely the best option. \n\n" \
-        "To continue their success as a striker the player needs to show good composure and play infront of goal."\
+        return "being a midfielder a transition to the midfield is most likely the scenario which ends up bringing the most success to the player.\n\n" \
+        " However, being good defensively might prove to make the player a better central defender than midfielder. While being a good finisher and presser are mostly a result of the player being more successful at the winger position. "
         
     if position == "Full Back":
-        return "A Full back should play as a Full back if they are good defensively while also showing signs of being good offensively and are more involved in the buildup of the game. These are traits that favor both the defensive aspect of the game"\
-        " as well as the build up play which the full back is a part of. Playing wide in the defensive line usually requires a lot of tracking back and defensive attendance, while it's a position that also "\
-        "wants a player that has the ability to go forward an be part in the offensive attacks. \n\n" \
-        "While a full back that is better one on one and good at making runs forward is more suited as playing in the winger role. \n\n" \
-        "As these traits are often linked to players ability to create chances, which is very much needed on the wing. "\
-        "Being good infront of goal is also a trait that usually suits the winger"\
-        "Lastly, a full back being good in the air and good defensively is more suited at playing as a Central defender."\
-        " Playing as a central defender requires defensive traits, as well as understanding of the game. Being able to win the ball back is crucial, "\
-        "but also being able to read the game and understand when to retrieve the ball and minimizing wrongdoings during a game is also important. " \
-        "Therefore, midfielders that exceeds in these traits are more likely to succeed as central defenders. \n\n"\
+        return "Looking into the full back and looking at where that player would fit in another team, being good at pressing and an intelligent defender, points toward the player continuing their success in the fullback position when transitioning teams. \n\n" \
+        " Being good as an active defender and on the ball usually makes towards a successful central defender." \
+        " While being better forward, making runs into the box and being good infront of goal is more suited as a winger, which is visible in the figure"
     
     if position == "Central Defender":
-        return "A central defender that is good in the air and good defensively while also showing signs of being good at defending with pressure should stick to playing central defender." \
-        " Playing as a central defender requires defensive traits, as well as understanding of the game. Being able to win the ball back is crucial, "\
-        "but also being able to read the game and understand when to retrieve the ball and minimizing wrongdoings during a game is also important. " \
-        "Therefore, midfielders that exceeds in these traits are more likely to succeed as central defenders. \n\n"\
-        "While a central defender that is good on the ball and good at distributing the ball should move to a role within midfield." \
-        " Playing as a midfielder often means being apart of the build up of the game, being a player that thrives with having the ball and a player that "\
-        "is comfortable in making decision. If a striker is dominant in these traits, moving them down the field and letting them be a bigger part of the team is most likely the best option. \n\n" \
-        "To continue their success as a striker the player needs to show good composure and play infront of goal."\
-        "Lastly, a central defender that is good defensively while also showing signs of being more involved in the game and calm on the ball should move to the full back spot. These are traits that favor both the defensive aspect of the game"\
-        " as well as the build up play which the full back is a part of. Playing wide in the defensive line usually requires a lot of tracking back and defensive attendance, while it's a position that also "\
-        "wants a player that has the ability to go forward an be part in the offensive attacks. \n\n" \
+        return "Being a Central defender that shows signs of being good at distributing the ball and an intelligent defender usually transitions best as a central defender when switching teams. \n\n" \
+        "Being good at pressing and a more active defender transitions best to the full back spot. " \
+        "While being a good passer and holder of the ball, while also showing signs of wanting to move forward usually results in a better transition into the midfield. "
     
     return "As a winger, moving to a midfielder position and succeeding is rarely encountered. While being a winger that is good on the ball as well in movement should stay out on the wing. \n\n" \
-    "However, being a winger that shows better signs in front of goal and also being more involved and composed forward should move up to the striker position as they will have the most success there.  "
+    "However, being a winger that shows better signs in front of goal and also being more involved and composed forward should move up to the striker position as they will experience the most success there.  "

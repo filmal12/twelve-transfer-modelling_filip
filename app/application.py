@@ -137,12 +137,6 @@ def main():
         all_position = list(POSITION_TRANSITIONS.keys())
 
         position = st.selectbox("Position", all_position, key="pos")    
-        # col_description, empty = st.columns(2)
-        # with col_description:
-
-        desc = get_predefined_description(position)
-
-        st.text(desc)
 
         if st.button("Refresh", key="overview"):
             col_figure, col_description = st.columns(2)
@@ -150,7 +144,7 @@ def main():
             with col_figure:
 
                 parsedDf = getTopFeatures(position)
-                print(parsedDf)
+
                 parsedDf = parsedDf[parsedDf["feature"].isin(ALL_QUALITIES)]
 
                 fig = display_top_features(parsedDf, position)
@@ -158,5 +152,11 @@ def main():
                     st.pyplot(fig)
                 else:
                     st.warning("No image loaded")
+
+            with col_description:
+                
+                desc = get_predefined_description(position)
+
+                st.text(desc)
 if __name__ == "__main__":
     main()

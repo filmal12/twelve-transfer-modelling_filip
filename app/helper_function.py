@@ -69,6 +69,7 @@ def create_top_features_radar(player_row, player_name, best_position, best_score
                               position_prefix, target_name, all_df, source_position,
                               figsize=(3.5, 3.5), font_scale=1.0):
     """Create dark-mode radar plot of top 10 model features and return the figure."""
+    print(player_name, best_score)
     if not position_prefix or not target_name:
         return None
 
@@ -96,7 +97,7 @@ def create_top_features_radar(player_row, player_name, best_position, best_score
     if not feature_values:
         return None
 
-    players_pool = all_df[all_df["from_position"] == source_position].copy()
+    players_pool = all_df[(all_df["from_position"] == source_position) & (all_df["from_competition"] == 808)].copy()
 
     labels = []
     values_normalized = []
@@ -264,8 +265,6 @@ def display_position_change(from_pos, to_position, best_position, value, second_
         ha="center", va="center", fontsize=10, fontweight="bold",
         color="black", zorder=2,
     )
-
-    print(best_position, value)
 
     if best_position == from_pos:
         draw_self_loop_position(ax, from_x, from_y)

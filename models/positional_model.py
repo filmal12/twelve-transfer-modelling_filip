@@ -449,7 +449,7 @@ def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
 
     return rf_r2, mae
         
-BASELINE = True
+BASELINE = False
 
 def parse_competition_deltas(df):
     from_quality_cols = [c for c in df.columns if c in IND_VARS]
