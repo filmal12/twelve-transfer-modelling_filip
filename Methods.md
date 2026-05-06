@@ -27,9 +27,13 @@ The transfer data is in this case used for the training part of this project. Th
 ### Competitions
 Competitions, something that makes a big difference during the transfer window in football, and generally for the coming succession of the player when moving teams. All competitions in football have very different styles of play, with some playing quicker football and while others might play more technical. 
 
-To simulate this change, the competitions will be one-hot encoded into the model. However, with a dataset consisting of more than 100.000 rows, and more than 300 competitions it would be insufficient to add all competitions into the model as it would prove to add unnecessary complexity and load to the model.
+The dataset consists of transfers between 300 different competitions, using all of these as one-hot-encoded variables would be redundant as it provides too many features for the models to handle and can consequently overfit the models. Further, this approach would not be simulating the change from one competition to another, and would later just give a general approach to the competitions affect in transfer but would be limited to the transfers that have been made from or to that competition. 
 
-Therefore the model will only encode competitions that exist in more than 5% of the dataset, due to the fact that if the competition is provided in more than 5% of the dataset there exist enough information to be able to make relative good conclusions on how a transfer to or from that competition usually transfers the players quality.
+So, to keep the models in tune with the context of success, the competitions will be calculated into delta values instead. The delta values will be based on the players current competitions average qualities in that players given position and the target competitions average qualities for that players position.
+
+delta_competiton = average(qualities_position_to_competition) - average(qualities_position_from_competition) 
+
+This gives more context to whether the player actually moves to a team in a competition where the players own competition is worse or better than their current competition. Providing a better insight to how moving to a team that plays in a league that is more or less competitive affects the outcome of the players qualities. 
 
 ### Minutes played
 Further, looking at the dataset it contains a lot of player transfers, consequently also a lot of players with consistently small amount of minutes. This could mean that players quality values might be a lot improved compared to their real life ability, since the qualities are very often created by using per 90 stats. 
