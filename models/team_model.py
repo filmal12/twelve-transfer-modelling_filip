@@ -1,10 +1,3 @@
-"""
-Team Success Prediction Model with XGBoost
-Predicts team performance metric changes when a player transitions positions.
-Uses pre-transition player attributes to predict changes in team metrics
-after the positional change.
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -48,20 +41,22 @@ MAX_FEATURES = 35  # Limit features to prevent overfitting
 
 team_scatter = False
 
+BASELINE_QUAL = False
+BASELINE_TEAM = False
+MODEL = True
+
 def getTeamStatsChanges(only_position_changes, full_df):
     team_stat_cols = [c for c in only_position_changes.columns if c.startswith("to_team_stats_")]
 
     if not team_stat_cols or "to_team_id" not in full_df.columns or "to_season" not in full_df.columns:
         return only_position_changes
 
-    # Build previous-season lookup: rename stats to prev_to_team_stats_*
     prev_lookup = (
         full_df[["to_team_id", "to_season"] + team_stat_cols]
         .drop_duplicates(subset=["to_team_id", "to_season"])
         .rename(columns={"to_season": "_prev_lookup_season"} | {col: f"prev_{col}" for col in team_stat_cols})
     )
 
-    # Vectorized join: match each row to the same team one season prior
     df = only_position_changes.copy()
     df["_join_season"] = df["to_season"] - 1
     merged = df.merge(
@@ -71,7 +66,6 @@ def getTeamStatsChanges(only_position_changes, full_df):
         how="inner",
     ).drop(columns=["_join_season", "_prev_lookup_season"])
 
-    # Compute delta columns (current season minus previous season)
     for col in team_stat_cols:
         delta_col = "delta_" + col.removeprefix("to_team_stats_")
         merged[delta_col] = merged[col] - merged[f"prev_{col}"]
@@ -97,6 +91,17 @@ def identify_positional_changes(df):
     
     return position_changes
 
+def get_player_qualities():
+    return IND_VARS.copy()
+
+def get_team_qualities_vars():
+    qual_list = []
+    for quality_name in TEAM_QUALS:
+        qual = quality_name.lower()
+
+        qual_list.append(f"from_{qual}")
+
+    return qual_list.copy()
 
 def prepare_category_model_data(df, target_metrics):    
     # Filter for transitions TO this category
@@ -107,55 +112,56 @@ def prepare_category_model_data(df, target_metrics):
     
     z_score_cols = []
 
-    # Get feature columns: z-scores from BEFORE the position change
-    z_score_cols = IND_VARS.copy()
+    if BASELINE_QUAL:
+        player_qualities = get_player_qualities()
+        z_score_cols = player_qualities
 
-    for quality_name in TEAM_QUALS:
-        qual = quality_name.lower()
+    if BASELINE_TEAM:
+        team_qualities = get_team_qualities_vars()
 
-        z_score_cols.append(f"from_{qual}")
+        z_score_cols = team_qualities
 
-    if not z_score_cols:
-        return None
+    if MODEL:
+        player_qualities = get_player_qualities()
+        z_score_cols = player_qualities
 
-    # One-hot encode from_position and add to features
-    if "from_position" in df_filtered.columns and "to_position" in df_filtered.columns:
-        pos_changes_dummies = pd.get_dummies(POSITIONAL_CHANGES.copy()).astype(float)
+        team_qualities = get_team_qualities_vars()
 
-        # Build per-row key e.g. "Striker-Winger"
-        row_pos_changes = df_filtered["from_position"] + "-" + df_filtered["to_position"]
-        # Encode per row, reindex to the full POSITIONAL_CHANGES columns (fills unknown combos with 0)
-        row_dummies = (
-            pd.get_dummies(row_pos_changes)
-            .reindex(columns=pos_changes_dummies.columns, fill_value=0)
-            .astype(float)
-        )
-        row_dummies.index = df_filtered.index
-        df_filtered = pd.concat([df_filtered, row_dummies], axis=1)
+        z_score_cols.extend(team_qualities)
+
+        # One-hot encode from_position and add to features
+        if "from_position" in df_filtered.columns and "to_position" in df_filtered.columns:
+            pos_changes_dummies = pd.get_dummies(POSITIONAL_CHANGES.copy()).astype(float)
+
+            # Build per-row key e.g. "Striker-Winger"
+            row_pos_changes = df_filtered["from_position"] + "-" + df_filtered["to_position"]
+            
+            row_dummies = (
+                pd.get_dummies(row_pos_changes)
+                .reindex(columns=pos_changes_dummies.columns, fill_value=0)
+                .astype(float)
+            )
+            row_dummies.index = df_filtered.index
+            df_filtered = pd.concat([df_filtered, row_dummies], axis=1)
 
 
-        z_score_cols = z_score_cols + pos_changes_dummies.columns.tolist()
+            z_score_cols = z_score_cols + pos_changes_dummies.columns.tolist()
 
-    # Get target columns: team metric or quality changes
     if QUALITIES:
         team_metrics = [c for c in df_filtered.columns if c.startswith("from_team_stats")]
 
         df_to = df_filtered.copy()
 
-        # Calculate qualities on to_ team stats
         for quality_name in target_metrics:
             df_to = get_team_qualities(quality_name, df_to, "from_")
 
         
         df_filtered = convertToZscores(team_metrics, df_filtered)
 
-        # Compute previous-season qualities if prev_to_team_stats_* columns exist
         prev_team_stat_cols = [c for c in df_filtered.columns if c.startswith("prev_to_team_stats_")]
         to_stat_cols = [c for c in df_filtered.columns if c.startswith("to_team_stats_")]
         has_prev = bool(prev_team_stat_cols)
         if has_prev:
-            # Drop current-season to_team_stats_* so there are no duplicate columns when
-            # prev_to_team_stats_* is renamed to to_team_stats_* for quality calculation.
             df_prev = (
                 df_filtered
                 .drop(columns=to_stat_cols)
@@ -176,10 +182,6 @@ def prepare_category_model_data(df, target_metrics):
                 df_filtered[delta_col] = df_to[quality_col_lower]
             delta_cols.append(delta_col)
     else:
-        # Use team metrics as targets
-        # target_metrics = TEAM_METRICS[target_category]
-        
-        # Calculate metric deltas (after - before)
         delta_cols = []
         for metric in target_metrics:
             from_col = f"from_{metric}"
@@ -193,13 +195,10 @@ def prepare_category_model_data(df, target_metrics):
     if not delta_cols:
         return None
     
-    # Feature selection: reduce number of features to prevent overfitting
     if len(z_score_cols) > MAX_FEATURES:
         # Calculate variance for each feature in filtered data
         feature_variance = df_filtered[z_score_cols].var().sort_values(ascending=False)
-        z_score_cols = feature_variance.head(MAX_FEATURES).index.tolist()
-    
-    # z_score_cols = remove_correlated_features(df_filtered, z_score_cols)    
+        z_score_cols = feature_variance.head(MAX_FEATURES).index.tolist()  
 
     all_data_cols = z_score_cols + delta_cols
     df_clean = df_filtered[all_data_cols]
@@ -207,9 +206,7 @@ def prepare_category_model_data(df, target_metrics):
     if len(df_clean) < 10:
         return None
     
-    # Separate features and targets
     X = df_clean[z_score_cols].fillna(0)
-    # Create multi-target dataframe
     y = df_clean[delta_cols]
 
     return {
@@ -336,12 +333,20 @@ def train_category_models(df):
             category_lower = category.lower()
             
             for metric_col, model_result in category_results.items():
-                file_path = "parameters/team_models/rsquared.csv"
+                model_type = "full"
+
+                if BASELINE_QUAL:
+                    model_type = "qual"
+
+                if BASELINE_TEAM:
+                    model_type = "team"
+
+                file_path = f"parameters/team_models/rsquared_{model_type}.csv"
 
                 trained_res = model_result["train_metrics"]
                 r2 = trained_res["r2"]
-
-                stats_tot = pd.DataFrame(data=[[category, r2]], columns = ["Target", "R^2"])
+                mae = trained_res["mae"]
+                stats_tot = pd.DataFrame(data=[[category, r2, mae]], columns = ["Target", "R^2", "MAE"])
 
                 if os.path.isfile(file_path):
                     stats_tot.to_csv(file_path, mode='a', header=False, index=False)
@@ -475,18 +480,12 @@ def team_scatter_plots(df, quality_type, metric, top_features):
         plt.close(fig)
 
 def main():
-    """Main execution function"""
-    
-    # Load data
     df = get_all_data().copy()
     
-    # Standardize column names
     df.columns = df.columns.str.replace(" ", "_")
 
-    # Identify positional changes
     df_pos_changes = identify_positional_changes(df)
 
-    # Keep only teams that received at most one transfer where the player played 400+ minutes
     if "to_Minutes" in df_pos_changes.columns and "to_team_id" in df_pos_changes.columns and "to_season" in df_pos_changes.columns:
         qualified = df_pos_changes[df_pos_changes["to_Minutes"] >= 400]
 
@@ -510,25 +509,22 @@ def main():
         return
 
     if TRAIN_MODELS:
-        # Train category-specific models
         results = train_category_models(main_df)
         
-        # Create summary report
         for category, category_data in results.items():
             for metric_col, model_result in category_data['models'].items():
                 if PLOT_RESULTS:
                     category_lower = category.lower()
-                    # Subdirectory based on metric or quality
+
                     subdir = "quality" if QUALITIES else "metric"
                     os.makedirs(f"Figures/team_models/{category_lower}/{subdir}", exist_ok=True)
                     
-                    # Performance plot
                     plot_model_performance(
                         model_result,
                         title=f"{category} Category - Team Success Predictions",
                         metric_name=metric_col
                     )
-                    # Feature importance / SHAP plot
+
                     plot_feature_importance(
                         model_result["feature_importance"],
                         shap_values=model_result["shap_values"],
