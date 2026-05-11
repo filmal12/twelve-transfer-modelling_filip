@@ -37,7 +37,6 @@ from misc.plots import (
 sys.path.append(os.path.abspath(".."))
 
 from data_loader import load_data
-from team_qualities import get_team_qualities
 from setup import (
     WINGER_QUALITIES,
     STRIKER_QUALITIES,

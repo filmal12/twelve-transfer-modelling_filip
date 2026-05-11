@@ -16,7 +16,8 @@ from misc.helpers import (
     add_team_features,
     get_feature_names,
     load_shap_importance,
-    predict_safe
+    predict_safe,
+    get_standardized_position_values
 )
 
 sys.path.append(os.path.abspath(".."))
@@ -85,10 +86,13 @@ def _run_position_switch_analysis(
         path_max_preds: dict[str, np.ndarray] = {}
         path_average_preds: dict[str, np.ndarray] = {}
         path_agg_shap: dict[str, pd.Series] = {}
+        # Per-target predictions keyed by (path_key, target_name) -> np.ndarray
+        path_target_preds: dict[str, dict[str, np.ndarray]] = {}
 
         for path_key in path_keys:
             _fp, _tp, targets = PATH_CONFIG[path_key]
             per_target_preds: list[np.ndarray] = []
+            target_pred_map: dict[str, np.ndarray] = {}
             shap_imps: list[pd.Series] = []
 
             for target in targets:
@@ -112,6 +116,7 @@ def _run_position_switch_analysis(
                 try:
                     preds = predict_safe(model, sample_df, feature_names)
                     per_target_preds.append(preds)
+                    target_pred_map[target] = preds
                 except Exception as e:
                     print(f"  [{path_key}/{target}] Prediction error: {e}")
                     continue
@@ -128,6 +133,8 @@ def _run_position_switch_analysis(
                 path_average_preds[path_key] = np.mean(
                     np.stack(per_target_preds, axis=1), axis=1
                 )
+            if target_pred_map:
+                path_target_preds[path_key] = target_pred_map
             if shap_imps:
                 path_agg_shap[path_key] = (
                     pd.concat(shap_imps, axis=1).fillna(0).mean(axis=1)
@@ -146,12 +153,30 @@ def _run_position_switch_analysis(
         )
 
         for i in range(len(pred_average_df)):
-            row = pred_average_df.iloc[i]
-            best_key = row.idxmax()
-            best_to_pos = PATH_CONFIG[best_key][1]
+            # Build {position: {quality: value}} for this player across all transitions
+            player_quality_scores: dict[str, dict[str, float]] = {}
+            for pk, tgt_preds in path_target_preds.items():
+                to_pos = PATH_CONFIG[pk][1]
+                player_quality_scores[to_pos] = {
+                    tgt: float(preds[i]) for tgt, preds in tgt_preds.items()
+                }
+
+            std_positions = get_standardized_position_values(
+                full_df, player_quality_scores, from_pos, 808
+            )
+
+            if std_positions:
+                best_to_pos = max(std_positions, key=std_positions.get)
+                best_key = next(
+                    (k for k, (_, tp, _) in PATH_CONFIG.items() if tp == best_to_pos and k in path_keys),
+                    None
+                )
+            else:
+                row = pred_average_df.iloc[i]
+                best_key = row.idxmax()
+                best_to_pos = PATH_CONFIG[best_key][1]
+
             switched = same_key is None or best_key != same_key
-            if from_pos == "Central Defender":
-                print(f"Central defender {from_pos} - {best_to_pos}. switched: {switched}")
             switch_results.append(
                 {
                     "from_position": from_pos,

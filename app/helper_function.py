@@ -19,7 +19,20 @@ from setup import (
     IND_VARS,
     IND_TEAM_VARS,
     normal_quals,
+    WINGER_QUALITIES,
+    STRIKER_QUALITIES,
+    FB_QUALITIES,
+    MIDFIELDER_QUALITIES,
+    CENTRAL_DEFENDER_QUALITIES,
 )
+
+POS_QUAL_MAP = {
+    "Winger": WINGER_QUALITIES,
+    "Striker": STRIKER_QUALITIES,
+    "Midfielder": MIDFIELDER_QUALITIES,
+    "Full back": FB_QUALITIES,
+    "Central Defender": CENTRAL_DEFENDER_QUALITIES,
+}
 
 ################################
 # Different helper functions for 
@@ -480,18 +493,33 @@ def display_top_features(df_features, from_pos):
 
     return fig
 
-def get_competition_average(df, comp, position, quality):
+def get_competition_average(df, comp, position):
     df_parsed_from = df.loc[(df["from_competition"] == comp) & (df["from_position"] == position) & (df["from_season"] == 2025)]
     
     df_parsed_to = df.loc[(df["to_competition"] == comp) & (df["to_position"] == position) & (df["to_season"] == 2025)]
-    print(df_parsed_from, position)
-    from_comp_strength = df_parsed_from[f"from_{quality}"].mean()
+    
+    qualities = POS_QUAL_MAP[position]
 
-    to_comp_strength = df_parsed_to[f"to_{quality}"].mean()
+    scores = []
 
-    total_strength = (from_comp_strength + to_comp_strength) / 2
+    for q in qualities:
+        from_comp_strength = df_parsed_from[f"from_{q}"].mean()
 
-    return total_strength
+        to_comp_strength = df_parsed_to[f"to_{q}"].mean()
+        
+        total_strength = (from_comp_strength + to_comp_strength) / 2
+
+        mean = total_strength.mean()
+        std = total_strength.std()
+        if std == 0:
+            continue
+
+        z = (total_strength - mean) / std
+
+        scores.append(z)
+        
+
+    return (sum(scores) / 3)
 def prepare_player_df(df_full, player_name, season):
     player_df = df_full[
         (df_full["short_name"] == player_name) & (df_full["from_season"] == season)

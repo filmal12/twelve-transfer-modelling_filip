@@ -19,6 +19,10 @@ from app.helper_function import (
     get_competition_average
 )
 
+from misc.helpers import (
+    get_standardized_position_values
+)
+
 sys.path.append(os.path.abspath(".."))
 from setup import (
     POS_ABBREV,
@@ -72,6 +76,7 @@ def predict_player(player_name, season, df_full, competition_data):
     transition_targets = {}
     transition_team_impr = {}
     average = {}
+    all_quality_scores = {}
 
     positions = ["Full Back", "Central Defender", "Winger", "Midfielder", "Striker", "Goalkeeper"]
 
@@ -122,8 +127,8 @@ def predict_player(player_name, season, df_full, competition_data):
             print(pos_scores)
         valid_scores = {k: v for k, v in pos_scores.items() if v is not None}
         average[to_pos] = np.mean(list(valid_scores.values()))
-
         if valid_scores:
+            all_quality_scores[to_pos] = dict(valid_scores)
             transition_targets[to_pos] = max(valid_scores, key=valid_scores.get)
             transition_scores[to_pos] = valid_scores[transition_targets[to_pos]]
         else:
@@ -170,6 +175,7 @@ def predict_player(player_name, season, df_full, competition_data):
 
     valid_scores = {k: v for k, v in current_quality_values.items() if v is not None}
     if valid_scores:
+        all_quality_scores[from_pos] = dict(valid_scores)
         transition_targets[from_pos] = max(valid_scores, key=valid_scores.get)
         transition_scores[from_pos] = valid_scores[transition_targets[from_pos]]
     else:
@@ -210,44 +216,33 @@ def predict_player(player_name, season, df_full, competition_data):
                 print(f"Error loading team model for {target}: {e}")
                 team_impr[target] = None
     transition_team_impr = team_impr
-
-
+    standardized_pos = get_standardized_position_values(df_full, all_quality_scores, from_pos, 808)
+    print(standardized_pos)
     # Display results
     st.subheader(f"Player success analysis")
     st.write(f"**Current position:** {from_pos}")
-    # st.write(f"**Recommended position:** {best_position} (score: {best_score:.4f})")
-    print(transition_targets)
-    scores_df = pd.DataFrame([
-        {"Position": f"{pos} - {transition_targets[pos].replace("_", " ")}", "Score": f"{score:.4f}" if pd.notna(score) else "N/A"}
-        for pos, score in sorted(positions.items(), key=lambda x: x[1] if pd.notna(x[1]) else -1, reverse=True)
-    ])
-    # st.table(scores_df)
 
     # Radar plot for best transition
     position_prefix = None
     target_name = None
     comp_average = 0
-    if best_position in transition_targets:
-        position_prefix = f"{POS_ABBREV[from_pos]}_to_{POS_ABBREV[best_position]}"
-        target_name = transition_targets[best_position]
+    best_position = max(standardized_pos, key=standardized_pos.get)
+    best_score = standardized_pos[best_position]
 
-        comp_average = get_competition_average(df_full, 808, best_position, target_name)
-        delta_def = (transition_scores[best_position] - comp_average) > 0
+
+    comp_average = get_competition_average(df_full, 808, best_position)
+    delta_def = (best_score - comp_average) > 0
+    if best_position in transition_targets:
+            position_prefix = f"{POS_ABBREV[from_pos]}_to_{POS_ABBREV[best_position]}"
+            target_name = transition_targets[best_position]
+   
     col1, col2 = st.columns(2, vertical_alignment="top")
     with col1:
-        non_conclusive = all(score > 0.5 for score in positions.values())
+        non_conclusive = all(score > 0.5 for score in standardized_pos.values())
 
         has_second_position = False
         second_position = None
         second_position_target = None
-
-        if not non_conclusive:
-            second_position = max((p for p in all_positions if p != best_position), key=lambda k: positions[k] if pd.notna(positions[k]) else -np.inf)
-            second_position_target = transition_targets.get(second_position, "N/A").replace("_", " ")
-
-            if transition_scores[second_position] >= 0.5:
-
-                has_second_position = True
 
         description = generate_player_transition_description(player_name, from_pos, best_position, df_full, target_name, non_conclusive, has_second_position, second_position, second_position_target, delta_def)
         st.markdown(f"### Transition Analysis")
@@ -256,7 +251,7 @@ def predict_player(player_name, season, df_full, competition_data):
         other_position = None
         if has_second_position:
             other_position = second_position
-        fig = display_position_change(from_pos, best_position, best_position, transition_scores[best_position], second_position = other_position)
+        fig = display_position_change(from_pos, best_position, best_position, standardized_pos[best_position], second_position = other_position)
         if fig:
             st.pyplot(fig)
         else:
