@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import xgboost as xgb
 import joblib
 import os
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from models.positional_model import remove_correlated_features
 import shap
@@ -41,9 +41,10 @@ MAX_FEATURES = 35  # Limit features to prevent overfitting
 
 team_scatter = False
 
-BASELINE_QUAL = False
+NAIVE_DELTA = False
+BASELINE_QUAL = True
 BASELINE_TEAM = False
-MODEL = True
+MODEL = False
 
 def getTeamStatsChanges(only_position_changes, full_df):
     team_stat_cols = [c for c in only_position_changes.columns if c.startswith("to_team_stats_")]
@@ -229,26 +230,69 @@ def train_xgboost_category_model(X, y, category_name, metric_names, test_size=TE
     for metric_col in y.columns:
         y_metric = y[metric_col]
         
+        # Drop rows with NaN or infinite values in the target
+        valid_mask = np.isfinite(y_metric)
+        X_clean = X.loc[valid_mask]
+        y_metric = y_metric.loc[valid_mask]
+
+        if len(X_clean) < 10:
+            print(f"Skipping {metric_col}: only {len(X_clean)} valid samples after removing NaN/inf")
+            continue
+        
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y_metric, test_size=test_size, random_state=RANDOM_STATE
+            X_clean, y_metric, test_size=test_size, random_state=RANDOM_STATE
         )
 
-        print(f"Category: {category_name} - sample size {len(X)}")
+        print(f"Category: {category_name} - sample size {len(X_clean)}")
         
-        # Train XGBoost model with regularization to prevent overfitting
-        xgb_model = xgb.XGBRegressor(
-            n_estimators=100,
-            max_depth=5,
-            learning_rate=0.1,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
+        # Hyperparameter tuning via GridSearchCV
+        param_grid = {
+            'max_depth': [2, 3, 5],
+            'reg_alpha': [0.01, 0.1, 0.5, 1.0],
+            'reg_lambda': [0.5, 1.0, 1.5, 2.0],
+        }
+        grid_search = GridSearchCV(
+            xgb.XGBRegressor(
+                n_estimators=200,
+                learning_rate=0.02,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_weight=5,
+                random_state=42,
+            ),
+            param_grid,
+            cv=4,
+            scoring='neg_mean_absolute_error',
+            n_jobs=-1,
         )
-        
-        xgb_model.fit(
-            X_train, y_train
-        )
+        grid_search.fit(X_train, y_train)
+        best_params = grid_search.best_params_
+        print(f"  Best params: {best_params}")
+
+        xgb_model = grid_search.best_estimator_
+
+        # Save best params to CSV
+        stats_dir = "model_statistics"
+        os.makedirs(stats_dir, exist_ok=True)
+        row = {"category": category_name, "metric": metric_col}
+        row.update(best_params)
+        stats_df = pd.DataFrame([row])
+        stats_path = f"{stats_dir}/team_xgboost_stats.csv"
+        if os.path.isfile(stats_path):
+            stats_df.to_csv(stats_path, mode='a', header=False, index=False)
+        else:
+            stats_df.to_csv(stats_path, mode='w', header=True, index=False)
+
+        # Cross-validation on full data to detect overfitting
+        cv_folds = min(5, len(X_clean))  # Use up to 5 folds
+        cv_r2_scores = cross_val_score(xgb_model, X_clean, y_metric, cv=cv_folds, scoring='r2')
+        cv_mae_scores = cross_val_score(xgb_model, X_clean, y_metric, cv=cv_folds, scoring='neg_mean_absolute_error')
+
+        cv_r2_mean = cv_r2_scores.mean()
+        cv_r2_std = cv_r2_scores.std()
+        cv_mae_mean = -cv_mae_scores.mean()
+        cv_mae_std = cv_mae_scores.std()
 
         if SAVE_MODELS:
             os.makedirs(f"team_models", exist_ok=True)
@@ -265,6 +309,15 @@ def train_xgboost_category_model(X, y, category_name, metric_names, test_size=TE
         test_r2 = r2_score(y_test, y_pred_test)
         train_mae = mean_absolute_error(y_train, y_pred_train)
         test_mae = mean_absolute_error(y_test, y_pred_test)
+
+        # Print train, test, and CV metrics for overfitting analysis
+        print(f"\n--- {category_name} | {metric_col} ---")
+        print(f"  Train  R2: {train_r2:.4f}   MAE: {train_mae:.4f}")
+        print(f"  Test   R2: {test_r2:.4f}   MAE: {test_mae:.4f}")
+        print(f"  CV     R2: {cv_r2_mean:.4f} (+/- {cv_r2_std:.4f})   MAE: {cv_mae_mean:.4f} (+/- {cv_mae_std:.4f})")
+        print(f"  Best: depth={best_params['max_depth']}, alpha={best_params['reg_alpha']}, lambda={best_params['reg_lambda']}")
+        if train_r2 - cv_r2_mean > 0.2:
+            print(f"  ⚠ Possible overfitting: Train R2 is {train_r2 - cv_r2_mean:.4f} higher than CV R2")
         
         # Create SHAP plot for XGBoost
         path_prefix = "team_models"
@@ -296,6 +349,14 @@ def train_xgboost_category_model(X, y, category_name, metric_names, test_size=TE
                 "mse": test_mse,
                 "mae": test_mae
             },
+            "cv_metrics": {
+                "r2_mean": cv_r2_mean,
+                "r2_std": cv_r2_std,
+                "mae_mean": cv_mae_mean,
+                "mae_std": cv_mae_std,
+                "r2_folds": cv_r2_scores.tolist(),
+                "mae_folds": (-cv_mae_scores).tolist(),
+            },
             "feature_importance": feature_importance,
             "shap_values": shap_values_xgb,
             "X_train": X_train,
@@ -319,7 +380,7 @@ def train_category_models(df):
         data = prepare_category_model_data(df, [category])
         if data is None or len(data["X"]) < 10:
             continue
-        
+
         # Train models for this category
         category_results = train_xgboost_category_model(
             data["X"],
@@ -353,6 +414,22 @@ def train_category_models(df):
                 else:
                     os.makedirs(os.path.dirname("parameters/team_models"), exist_ok=True)
                     stats_tot.to_csv(file_path, mode='w', header=True, index=False)
+
+                if NAIVE_DELTA:
+                    # Naive baseline: predict zero delta using the same train split
+                    y_test = model_result["y_test"]
+                    y_pred_naive = np.zeros(len(y_test))
+                    naive_r2 = r2_score(y_test, y_pred_naive)
+                    naive_mae = mean_absolute_error(y_test, y_pred_naive)
+
+                    naive_file_path = "parameters/team_models/rsquared_naive.csv"
+                    naive_stats = pd.DataFrame(data=[[category, naive_r2, naive_mae]], columns=["Target", "R^2", "MAE"])
+
+                    if os.path.isfile(naive_file_path):
+                        naive_stats.to_csv(naive_file_path, mode='a', header=False, index=False)
+                    else:
+                        os.makedirs("parameters/team_models", exist_ok=True)
+                        naive_stats.to_csv(naive_file_path, mode='w', header=True, index=False)
 
         results[category] = {
             "data": data,

@@ -76,7 +76,6 @@ def run_analysis():
     os.makedirs(OUT_DIR, exist_ok=True)
 
     full_df = load_data()
-    full_df = add_team_features(full_df)
 
     has_player_id = "wy_player_id" in full_df.columns
 
@@ -88,6 +87,42 @@ def run_analysis():
     transition_player_counts: dict[str, int] = {}
     # path_key aggregated importance Series (top 10)
     transition_importances: dict[str, pd.Series] = {}
+
+    # Print out the rate of the metrics from player model  
+    model = ["xgboost", "rf", "lasso", "ridge", "ols"]
+
+    for mod in model:
+        naive = "Figures/model_evaluation/model_metrics_baseline_naive.csv"
+        team = "Figures/model_evaluation/model_metrics_baseline_team.csv"
+        full = "Figures/model_evaluation/model_metrics.csv"
+
+        df_naive = pd.read_csv(naive)
+        df_team = pd.read_csv(team)
+        df = pd.read_csv(full)
+
+        df_naive = df_naive[df_naive["Model"] == mod]
+        df_team = df_team[df_team["Model"] == mod]
+        df = df[df["Model"] == mod]
+
+        naive_metric = df_naive["MAE"].mean()
+        team_metric = df_team["MAE"].mean()
+        metric = df["MAE"].mean()
+
+        print(f"\n\nMETRICS FOR MODEL - {mod}")
+
+        print(f"MAE naive model: {naive_metric} \n Team naive model: {team_metric} \n Full Model: {metric}")
+
+    for mod in model:
+        full = "Figures/model_evaluation/model_r_metrics.csv"
+
+        df = pd.read_csv(full)
+
+        df = df[df["Model"] == mod]
+
+        print(f"\n\nR² METRICS FOR MODEL - {mod}")
+        grouped = df.groupby(["from_pos", "to_pos"])["R^2"].mean()
+        for (fp, tp), mean_r2 in grouped.items():
+            print(f"  {fp} -> {tp}: mean R² = {mean_r2:.4f}")
 
     for path_key, (from_pos, to_pos, targets) in PATH_CONFIG.items():
         df = full_df[
@@ -254,7 +289,24 @@ def run_analysis():
         if not cd_df.empty:
             dest_counts = cd_df["best_to_position"].value_counts()
 
-            plot_position_breakdown(cd_df, dest_counts, OUT_DIR, "dest_breakdown")
+            plot_position_breakdown(cd_df, dest_counts, "Central Defender", "Full Back", OUT_DIR, "dest_breakdown")
+
+    # Striker destination breakdown 
+    if switch_results:
+        sw_df = pd.DataFrame(switch_results)
+        cd_df = sw_df[sw_df["from_position"] == "Striker"]
+        if not cd_df.empty:
+            dest_counts = cd_df["best_to_position"].value_counts()
+
+            plot_position_breakdown(cd_df, dest_counts, "Striker", "Winger", OUT_DIR, "dest_breakdown2")
+    # Midfielder destination breakdown
+    if switch_results:
+        sw_df = pd.DataFrame(switch_results)
+        cd_df = sw_df[sw_df["from_position"] == "Midfielder"]
+        if not cd_df.empty:
+            dest_counts = cd_df["best_to_position"].value_counts()
+
+            plot_position_breakdown(cd_df, dest_counts, "Midfielder", "Winger", OUT_DIR, "dest_breakdown3")
 
     # Feature correlation CD vs FB players
     # Show how similar CDs and FBs are across IND_VARS, explaining why CD models

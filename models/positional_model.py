@@ -7,6 +7,7 @@ import statsmodels.formula.api as smf
 matplotlib.use("Agg")
 import xgboost as xgb
 from sklearn.metrics import r2_score, mean_absolute_error
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Lasso, Ridge, LinearRegression
 import joblib
@@ -125,24 +126,7 @@ def plot_stats(coefficients_sorted, quality_cols, quality_name, path, df_clean, 
             print(f"  {var_clean:40s}: {direction:10s} poaching ({coef:+.4f}) [{sig}]")
         print("="*70 + "\n")
 
-def remove_correlated_features(df, target, columns, correlation_threshold=0.8):
-    """
-    Remove highly correlated features to reduce multicollinearity.
-    
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        The dataframe containing the features
-    columns : list
-        List of column names to analyze for correlation
-    correlation_threshold : float
-        Correlation threshold above which to remove one feature (default: 0.8)
-    
-    Returns:
-    --------
-    list : Filtered list of column names with highly correlated features removed
-    """
-    
+def remove_correlated_features(df, target, columns, correlation_threshold=0.6):    
     # Calculate correlation matrix for the specified columns
     corr_matrix = df[columns].corr().abs()
 
@@ -186,7 +170,7 @@ def createShapPlot(model, X, model_type, target, path_prefix):
     plt.savefig(f"Figures/{path_prefix}/features/{target}_lasso_shap.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-OLS = True
+OLS = False
 XGBOOST = True
 RIDGE = True
 LASSO = True
@@ -198,64 +182,91 @@ CD_IGNORED_VARS = ["from_Box_threat", "from_Run_quality", "from_Poaching", "from
 INDEPENDENT_VARIABLES_GENERAL = IND_VARS
 INDEPENDENT_CD = [c for c in IND_VARS if c not in CD_IGNORED_VARS]
 
+STATS_DIR = "model_statistics"
+
+def _save_best_params(model_name, from_pos, to_pos, target, params_dict):
+    """Append a row of best hyperparameters to model_statistics/{model_name}_stats.csv."""
+    os.makedirs(STATS_DIR, exist_ok=True)
+    row = {"from_pos": from_pos, "to_pos": to_pos, "target": target}
+    row.update(params_dict)
+    df = pd.DataFrame([row])
+    file_path = f"{STATS_DIR}/{model_name}_stats.csv"
+    if os.path.isfile(file_path):
+        df.to_csv(file_path, mode='a', header=False, index=False)
+    else:
+        df.to_csv(file_path, mode='w', header=True, index=False)
+
 def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
     # Stepwise regression to select final OLS features
     suggest_features_ols = suggest_features.copy()
 
     competition_encoded = []
+    print(suggest_features)
+    if not BASELINE_NAIVE:
+        while len(suggest_features_ols) > 0:
+            formula = "Target ~ " + " + ".join(suggest_features_ols)
+            linear_model = smf.ols(formula=formula, data=clean_df).fit()
+            pvals = linear_model.pvalues
+            worst_p = pvals.max()
+            worst_var = pvals.idxmax()
+            
+            if worst_var == "Intercept":
+                top2 = pvals.nlargest(2)
+                worst_var = top2.index[1]
+                worst_p = top2.iloc[1]
+            
+            if worst_p > 0.05 and worst_var != "Intercept":
+                if "competition" in worst_var:
+                    competition_encoded.append(worst_var)
+                    # Find next worst variable that is not a competition variable
+                    non_comp_pvals = pvals[
+                        ~pvals.index.astype(str).str.contains("competition") & (pvals.index != "Intercept")
+                    ]
+                    if non_comp_pvals.empty or non_comp_pvals.max() <= 0.05:
+                        break
+                    worst_var = non_comp_pvals.idxmax()
+                    worst_p = non_comp_pvals.max()
 
-    while len(suggest_features_ols) > 0:
-        formula = "Target ~ " + " + ".join(suggest_features_ols)
-        linear_model = smf.ols(formula=formula, data=clean_df).fit()
-        pvals = linear_model.pvalues
-        worst_p = pvals.max()
-        worst_var = pvals.idxmax()
-        
-        if worst_var == "Intercept":
-            top2 = pvals.nlargest(2)
-            worst_var = top2.index[1]
-            worst_p = top2.iloc[1]
-        
-        if worst_p > 0.05 and worst_var != "Intercept":
-            if "competition" in worst_var:
-                competition_encoded.append(worst_var)
-                # Find next worst variable that is not a competition variable
-                non_comp_pvals = pvals[
-                    ~pvals.index.astype(str).str.contains("competition") & (pvals.index != "Intercept")
-                ]
-                if non_comp_pvals.empty or non_comp_pvals.max() <= 0.05:
-                    break
-                worst_var = non_comp_pvals.idxmax()
-                worst_p = non_comp_pvals.max()
-
-            suggest_features_ols.remove(worst_var)
-        else:
-            break
+                suggest_features_ols.remove(worst_var)
+            else:
+                break
     
-    # Train OLS model
+    # Train/test split
+    train_df, test_df = train_test_split(clean_df, test_size=0.2, random_state=42)
+
+    # Train OLS model on training set
     formula_ols = "Target ~ " + " + ".join(suggest_features_ols)
-    ols_model = smf.ols(formula=formula_ols, data=clean_df).fit()
-    ols_r2 = ols_model.rsquared
+    ols_model = smf.ols(formula=formula_ols, data=train_df).fit()
     
-    # Create residual plot for OLS
-    ols_predictions = ols_model.predict(clean_df)
-    mae = mean_absolute_error(clean_df["Target"], ols_predictions)
-    ols_residuals = clean_df["Target"].values - ols_predictions.values
+    # Evaluate on test set
+    ols_predictions = ols_model.predict(test_df)
+    ols_r2 = r2_score(test_df["Target"], ols_predictions)
+    mae = mean_absolute_error(test_df["Target"], ols_predictions)
+    ols_residuals = test_df["Target"].values - ols_predictions.values
     os.makedirs(f"Figures/{path_prefix}", exist_ok=True)
-    create_r2_residuals_plot(clean_df["Target"].values, ols_predictions.values, ols_residuals, ols_r2, f"{target}_ols", path_prefix)
+    create_r2_residuals_plot(test_df["Target"].values, ols_predictions.values, ols_residuals, ols_r2, f"{target}_ols", path_prefix)
     
+    # 4-fold cross-validation (using sklearn LinearRegression as proxy)
+    X_cv = clean_df[suggest_features_ols].fillna(0)
+    y_cv = clean_df["Target"]
+    cv_r2 = cross_val_score(LinearRegression(), X_cv, y_cv, cv=4, scoring='r2')
+    cv_mae = cross_val_score(LinearRegression(), X_cv, y_cv, cv=4, scoring='neg_mean_absolute_error')
+    print(f"  OLS CV R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}  |  CV MAE: {-cv_mae.mean():.4f} ± {cv_mae.std():.4f} | OLS R2: {ols_r2:.4f}")
+
     # Create SHAP plot for OLS
     try:
         createShapPlot(ols_models, clean_df, "ols", target, path_prefix)
     except:
         pass
     
+    # Refit on full data for saving
+    ols_model_full = smf.ols(formula=formula_ols, data=clean_df).fit()
     if save_params:
         os.makedirs(f"parameters/{path_prefix}", exist_ok=True)
-        joblib.dump(ols_model, f'parameters/{path_prefix}/{target}_ols.pkl')
+        joblib.dump(ols_model_full, f'parameters/{path_prefix}/{target}_ols.pkl')
         params_df = pd.DataFrame(columns=['Factor', 'mean', 'min', 'max'])
-        bse = ols_model.bse
-        b = ols_model.params
+        bse = ols_model_full.bse
+        b = ols_model_full.params
         bmin = b - bse
         bmax = b + bse
         
@@ -272,7 +283,7 @@ def ols_model(suggest_features, clean_df, path_prefix, target, save_params):
 
     return ols_r2, mae
 
-def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
+def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos="", to_pos=""):
     # Prepare data for tree/regression models
     X_full = clean_df[suggest_features].copy().fillna(0)
     # Cast competition text columns to category dtype so XGBoost can handle them
@@ -280,59 +291,82 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
         X_full[col] = X_full[col].astype("category")
     y = clean_df["Target"].copy()
     
-    # ========== XGBOOST ==========
-    xgb_model = xgb.XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_alpha=1.0,
-        reg_lambda=1.0,
-        min_child_weight=2,
-        gamma=0,
-        random_state=42,
-        enable_categorical=True
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X_full, y, test_size=0.2, random_state=42)
+
+    # Hyperparameter tuning via GridSearchCV
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'reg_alpha': [0.1, 0.5, 1.0],
+        'reg_lambda': [0.5, 1.0, 2.0],
+    }
+    grid_search = GridSearchCV(
+        xgb.XGBRegressor(
+            n_estimators=200,
+            learning_rate=0.01,
+            colsample_bytree=0.9,
+            enable_categorical=True,
+            random_state=42,
+        ),
+        param_grid,
+        cv=4,
+        scoring='neg_mean_absolute_error',
+        n_jobs=-1,
     )
-    
-    xgb_model.fit(X_full, y)
+    grid_search.fit(X_train, y_train)
+    best_params = grid_search.best_params_
+    print(f"  XGB best params: {best_params}")
+
+    xgb_model = grid_search.best_estimator_
     # Iteratively remove zero-importance features until all remaining features contribute
     while True:
         active_mask = xgb_model.feature_importances_ > 0
-        active_features = X_full.columns[active_mask].tolist()
-        if len(active_features) == len(X_full.columns) or len(active_features) == 0:
+        active_features = X_train.columns[active_mask].tolist()
+        if len(active_features) == len(X_train.columns) or len(active_features) == 0:
             break
+        X_train = X_train[active_features]
+        X_test = X_test[active_features]
         X_full = X_full[active_features]
         xgb_model = xgb.XGBRegressor(
             n_estimators=200,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            reg_alpha=1.0,
-            reg_lambda=1.0,
-            min_child_weight=2,
-            gamma=0,
+            learning_rate=0.01,
+            colsample_bytree=0.9,
+            enable_categorical=True,
             random_state=42,
-            enable_categorical=True
+            **best_params,
         )
-        xgb_model.fit(X_full, y)
+        xgb_model.fit(X_train, y_train)
 
-    y_pred_xgb = xgb_model.predict(X_full)
-    xgb_r2 = r2_score(y, y_pred_xgb)
-    mae = mean_absolute_error(y, y_pred_xgb)
-    xgb_residuals = y.values - y_pred_xgb
+    # Evaluate on test set
+    y_pred_xgb = xgb_model.predict(X_test)
+    xgb_r2 = r2_score(y_test, y_pred_xgb)
+    mae = mean_absolute_error(y_test, y_pred_xgb)
+    xgb_residuals = y_test.values - y_pred_xgb
 
-    # df_predictions = pd.concat([df_predictions, X_full.assign(Target=y, Prediction=xgb_model.predict(X_full), Model=f"{target}_xgboost")], ignore_index=True)
-    
+    # 4-fold cross-validation
+    cv_r2 = cross_val_score(xgb_model, X_full, y, cv=4, scoring='r2')
+    cv_mae = cross_val_score(xgb_model, X_full, y, cv=4, scoring='neg_mean_absolute_error')
+    print(f"  XGB CV R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}  |  CV MAE: {-cv_mae.mean():.4f} ± {cv_mae.std():.4f} | XGB R2: {xgb_r2:.4f}  |  Best: depth={best_params['max_depth']}, alpha={best_params['reg_alpha']}, lambda={best_params['reg_lambda']}")
+    _save_best_params("xgboost", from_pos, to_pos, target, best_params)
     # Create residual plot for XGBoost
     os.makedirs(f"Figures/{path_prefix}", exist_ok=True)
-    create_r2_residuals_plot(y.values, y_pred_xgb, xgb_residuals, xgb_r2, f"{target}_xgboost", path_prefix)
-    print(f"\nTarget: {target} - R^2: {xgb_r2:.4f}\n")
+    create_r2_residuals_plot(y_test.values, y_pred_xgb, xgb_residuals, xgb_r2, f"{target}_xgboost", path_prefix)
+    # print(f"\nTarget: {target} - R^2: {xgb_r2:.4f}\n")
+
+    # Refit on full data for saving and SHAP
+    xgb_model_full = xgb.XGBRegressor(
+        n_estimators=200,
+        learning_rate=0.01,
+        colsample_bytree=0.9,
+        enable_categorical=True,
+        random_state=42,
+        **best_params,
+    )
+    xgb_model_full.fit(X_full, y)
 
     # Create SHAP plot for XGBoost
     try:
-        explainer_xgb = shap.TreeExplainer(xgb_model)
+        explainer_xgb = shap.TreeExplainer(xgb_model_full)
         shap_values_xgb = explainer_xgb.shap_values(X_full)
         shap_importance_xgb = np.abs(shap_values_xgb).mean(axis=0)
 
@@ -345,7 +379,7 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
 
         if save_models:
             os.makedirs(f"parameters/{path_prefix}", exist_ok=True)
-            joblib.dump(xgb_model, f'parameters/{path_prefix}/{target}_xgboost.pkl')
+            joblib.dump(xgb_model_full, f'parameters/{path_prefix}/{target}_xgboost.pkl')
             
             feature_importance = pd.DataFrame({
                 'feature': X_full.columns.tolist(),
@@ -354,57 +388,105 @@ def xgboost_model(suggest_features, clean_df, path_prefix, target, save_models):
             
             feature_importance.to_csv(f'parameters/{path_prefix}/{target}_top_features.csv', index=False)
 
-            createShapPlot(xgb_model, X_full, "xgboost", target, path_prefix)
+            createShapPlot(xgb_model_full, X_full, "xgboost", target, path_prefix)
     except Exception as e:
         print(f"Error creating SHAP plot for {target} XGBoost: {e}")
         pass
     
     return xgb_r2, mae
 
-def lasso_model(suggest_features, clean_df, path_prefix, target, save_models):
+def lasso_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos="", to_pos=""):
     X_full = clean_df[suggest_features].copy().fillna(0)
     y = clean_df["Target"].copy()
-    lasso_model = Lasso(alpha=0.1, random_state=42)
-    lasso_model.fit(X_full, y)
-    y_pred_lasso = lasso_model.predict(X_full)
-    lasso_r2 = r2_score(y, y_pred_lasso)
-    mae = mean_absolute_error(y, y_pred_lasso)
-    lasso_residuals = y.values - y_pred_lasso
-    
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X_full, y, test_size=0.2, random_state=42)
+
+    # Hyperparameter tuning
+    param_grid = {'alpha': [0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]}
+    grid_search = GridSearchCV(
+        Lasso(random_state=42, max_iter=10000),
+        param_grid, cv=4, scoring='neg_mean_absolute_error', n_jobs=-1,
+    )
+    grid_search.fit(X_train, y_train)
+    best_alpha = grid_search.best_params_['alpha']
+    print(f"  Lasso best alpha: {best_alpha}")
+
+    lasso_mod = grid_search.best_estimator_
+
+    # Evaluate on test set
+    y_pred_lasso = lasso_mod.predict(X_test)
+    lasso_r2 = r2_score(y_test, y_pred_lasso)
+    mae = mean_absolute_error(y_test, y_pred_lasso)
+    lasso_residuals = y_test.values - y_pred_lasso
+
+    # 4-fold cross-validation
+    cv_r2 = cross_val_score(lasso_mod, X_full, y, cv=4, scoring='r2')
+    cv_mae = cross_val_score(lasso_mod, X_full, y, cv=4, scoring='neg_mean_absolute_error')
+    print(f"  Lasso CV R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}  |  CV MAE: {-cv_mae.mean():.4f} ± {cv_mae.std():.4f} | Lasso R2: {lasso_r2:.4f}  |  Best alpha={best_alpha}")
+    _save_best_params("lasso", from_pos, to_pos, target, {"alpha": best_alpha})
+    # Refit on full data for saving
+    lasso_mod_full = Lasso(alpha=best_alpha, random_state=42, max_iter=10000)
+    lasso_mod_full.fit(X_full, y)
+
     if save_models:
-        joblib.dump(lasso_model, f'parameters/{path_prefix}/{target}_lasso.pkl')
+        joblib.dump(lasso_mod_full, f'parameters/{path_prefix}/{target}_lasso.pkl')
     
     # Create residual plot for Lasso
-    create_r2_residuals_plot(y.values, y_pred_lasso, lasso_residuals, lasso_r2, f"{target}_lasso", path_prefix)
+    create_r2_residuals_plot(y_test.values, y_pred_lasso, lasso_residuals, lasso_r2, f"{target}_lasso", path_prefix)
     
     # Create SHAP plot for Lasso
     try:
-        createShapPlot(lasso_model, X_full, "lasso", target, path_prefix)
+        createShapPlot(lasso_mod_full, X_full, "lasso", target, path_prefix)
     except:
         pass
 
     return lasso_r2, mae
 
-def ridge_model(suggest_features, clean_df, path_prefix, target, save_models):
+def ridge_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos="", to_pos=""):
     # ========== RIDGE ==========
     X_full = clean_df[suggest_features].copy().fillna(0)
     y = clean_df["Target"].copy()
-    ridge_model = Ridge(alpha=1.0, random_state=42)
-    ridge_model.fit(X_full, y)
-    y_pred_ridge = ridge_model.predict(X_full)
-    ridge_r2 = r2_score(y, y_pred_ridge)
-    mae = mean_absolute_error(y, y_pred_ridge)
-    ridge_residuals = y.values - y_pred_ridge
-    
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X_full, y, test_size=0.2, random_state=42)
+
+    # Hyperparameter tuning
+    param_grid = {'alpha': [0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0]}
+    grid_search = GridSearchCV(
+        Ridge(random_state=42),
+        param_grid, cv=4, scoring='neg_mean_absolute_error', n_jobs=-1,
+    )
+    grid_search.fit(X_train, y_train)
+    best_alpha = grid_search.best_params_['alpha']
+    print(f"  Ridge best alpha: {best_alpha}")
+
+    ridge_mod = grid_search.best_estimator_
+
+    # Evaluate on test set
+    y_pred_ridge = ridge_mod.predict(X_test)
+    ridge_r2 = r2_score(y_test, y_pred_ridge)
+    mae = mean_absolute_error(y_test, y_pred_ridge)
+    ridge_residuals = y_test.values - y_pred_ridge
+
+    # 4-fold cross-validation
+    cv_r2 = cross_val_score(ridge_mod, X_full, y, cv=4, scoring='r2')
+    cv_mae = cross_val_score(ridge_mod, X_full, y, cv=4, scoring='neg_mean_absolute_error')
+    print(f"  Ridge CV R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}  |  CV MAE: {-cv_mae.mean():.4f} ± {cv_mae.std():.4f} | Ridge R2: {ridge_r2:.4f}  |  Best alpha={best_alpha}")
+    _save_best_params("ridge", from_pos, to_pos, target, {"alpha": best_alpha})
+    # Refit on full data for saving
+    ridge_mod_full = Ridge(alpha=best_alpha, random_state=42)
+    ridge_mod_full.fit(X_full, y)
+
     if save_models:
-        joblib.dump(ridge_model, f'parameters/{path_prefix}/{target}_ridge.pkl')
+        joblib.dump(ridge_mod_full, f'parameters/{path_prefix}/{target}_ridge.pkl')
     
     # Create residual plot for Ridge
-    create_r2_residuals_plot(y.values, y_pred_ridge, ridge_residuals, ridge_r2, f"{target}_ridge", path_prefix)
+    create_r2_residuals_plot(y_test.values, y_pred_ridge, ridge_residuals, ridge_r2, f"{target}_ridge", path_prefix)
     
     # Create SHAP plot for Ridge
     try:
-        createShapPlot(ridge_model, X_full, "ridge", target, path_prefix)
+        createShapPlot(ridge_mod_full, X_full, "ridge", target, path_prefix)
     except:
         pass
 
@@ -417,39 +499,68 @@ def baseline_model(clean_df, from_values):
     y_pred = reg.predict(x)
     return r2_score(y, y_pred), mean_absolute_error(y, y_pred)
 
-def forest_model(suggest_features, clean_df, path_prefix, target, save_models):
+def forest_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos="", to_pos=""):
     X_full = clean_df[suggest_features].copy().fillna(0)
     y = clean_df["Target"].copy()
-    # ========== RANDOM FOREST ==========
-    rf_model = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=5,
-        min_samples_leaf=2,
-        random_state=42,
-        n_jobs=-1
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X_full, y, test_size=0.2, random_state=42)
+
+    # Hyperparameter tuning
+    param_grid = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [5, 10, 15],
+    }
+    grid_search = GridSearchCV(
+        RandomForestRegressor(
+            min_samples_split=5, min_samples_leaf=2,
+            random_state=42, n_jobs=-1,
+        ),
+        param_grid, cv=4, scoring='neg_mean_absolute_error', n_jobs=-1,
     )
-    rf_model.fit(X_full, y)
-    y_pred_rf = rf_model.predict(X_full)
-    rf_r2 = r2_score(y, y_pred_rf)
-    mae = mean_absolute_error(y, y_pred_rf)
-    rf_residuals = y.values - y_pred_rf
-    
+    grid_search.fit(X_train, y_train)
+    best_params = grid_search.best_params_
+    print(f"  RF best params: {best_params}")
+
+    rf_model = grid_search.best_estimator_
+
+    # Evaluate on test set
+    y_pred_rf = rf_model.predict(X_test)
+    rf_r2 = r2_score(y_test, y_pred_rf)
+    mae = mean_absolute_error(y_test, y_pred_rf)
+    rf_residuals = y_test.values - y_pred_rf
+
+    # 4-fold cross-validation
+    cv_r2 = cross_val_score(rf_model, X_full, y, cv=4, scoring='r2')
+    cv_mae = cross_val_score(rf_model, X_full, y, cv=4, scoring='neg_mean_absolute_error')
+    print(f"  RF CV R²: {cv_r2.mean():.4f} ± {cv_r2.std():.4f}  |  CV MAE: {-cv_mae.mean():.4f} ± {cv_mae.std():.4f} | RF R2: {rf_r2:.4f}  |  Best: n_estimators={best_params['n_estimators']}, depth={best_params['max_depth']}")
+
+    _save_best_params("rf", from_pos, to_pos, target, best_params)
+
+    # Refit on full data for saving
+    rf_model_full = RandomForestRegressor(
+        min_samples_split=5, min_samples_leaf=2,
+        random_state=42, n_jobs=-1,
+        **best_params,
+    )
+    rf_model_full.fit(X_full, y)
+
     if save_models:
-        joblib.dump(rf_model, f'parameters/{path_prefix}/{target}_randomforest.pkl')
+        joblib.dump(rf_model_full, f'parameters/{path_prefix}/{target}_randomforest.pkl')
     
     # Create residual plot for Random Forest
-    create_r2_residuals_plot(y.values, y_pred_rf, rf_residuals, rf_r2, f"{target}_randomforest", path_prefix)
+    create_r2_residuals_plot(y_test.values, y_pred_rf, rf_residuals, rf_r2, f"{target}_randomforest", path_prefix)
     
     # Create SHAP plot for Random Forest
     try:
-        createShapPlot(rf_model, X_full, "randomforest", target, path_prefix)
+        createShapPlot(rf_model_full, X_full, "randomforest", target, path_prefix)
     except:
         pass
 
     return rf_r2, mae
         
-BASELINE = False
+BASELINE = True
+BASELINE_NAIVE = False
 
 def parse_competition_deltas(df):
     from_quality_cols = [c for c in df.columns if c in IND_VARS]
@@ -476,57 +587,57 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
     
     # Get feature columns
     z_score_cols = []
+    all_z_features = []
 
-    if (to_pos == "Central Defender") or (to_pos == "Full Back"):
-        z_score_cols = INDEPENDENT_CD
-    else:
-        z_score_cols = INDEPENDENT_VARIABLES_GENERAL
+    if not BASELINE_NAIVE: 
+        if (to_pos == "Central Defender") or (to_pos == "Full Back"):
+            z_score_cols = INDEPENDENT_CD
+        else:
+            z_score_cols = INDEPENDENT_VARIABLES_GENERAL
 
-    all_z_features = z_score_cols.copy()
+        all_z_features = z_score_cols.copy()
 
-    all_z_features.append("wyscout_weight_scaled")
-    all_z_features.append("player_season_age_scaled")
-    all_z_features.append("wyscout_height_scaled")
+        all_z_features.append("wyscout_weight_scaled")
+        all_z_features.append("player_season_age_scaled")
+        all_z_features.append("wyscout_height_scaled")
 
-    
-    df = parse_competition_deltas(df)
-    all_z_features.append("competition_delta")
+        
+        df = parse_competition_deltas(df)
+        all_z_features.append("competition_delta")
 
-    if not BASELINE: 
-        team_quals = TEAM_QUALS
-
-        df_get_team = df.copy()
-        df_to_team = df.copy()
-
-        for qual in team_quals:
-            df_get_team = get_team_qualities(qual, df_get_team, "from_")
-            df_to_team = get_team_qualities(qual, df_to_team, "to_")
-            quality_col = qual.lower()
-            all_z_features.append(f"from_{quality_col}")
-            all_z_features.append(f"to_{quality_col}")
-
-            df[f"from_{quality_col}"] = df_get_team[quality_col]
-            df[f"to_{quality_col}"] = df_to_team[quality_col]
+        if not BASELINE: 
+            team_quals = TEAM_QUALS
+            for qual in team_quals:
+                all_z_features.append(f"from_{qual.lower()}")
+                all_z_features.append(f"to_{qual.lower()}")
 
     stats_df = pd.DataFrame()
 
     for target in targets:
+        print(f"-----{target}---------")
         if verbose:
             print(f"{target:20s}", end=" | ")
+
+        if BASELINE_NAIVE:
+            all_z_features = [f"from_{target}"]
         
         target_col = f"from_{target}"
         target_to_col = f"to_{target}"
+
+        suggest_features = all_z_features
+        all_features = all_z_features
         
         # Remove self-target from features
-        suggest_features = [c for c in all_z_features if c != target_col]
-        all_features = [c for c in all_z_features if c != target_col]
-        
+        if not BASELINE_NAIVE:
+            suggest_features = [c for c in all_z_features if c != target_col]
+            all_features = [c for c in all_z_features if c != target_col]            
+            
         # Create target: absolute value in new position
         if TARGET_CHOICE == "CHANGE":
             df["Target"] = df[target_to_col] - df[target_col]
         else:
             df["Target"] = df[target_to_col]
-        suggest_features = remove_correlated_features(df, target, suggest_features, correlation_threshold=0.8)
+        suggest_features = remove_correlated_features(df, target, suggest_features, correlation_threshold=0.6)
 
         # Get clean subset
         clean_df = df[suggest_features + ["Target"]].fillna(0)
@@ -554,27 +665,27 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if XGBOOST:
-            r2, mse = xgboost_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = xgboost_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos, to_pos)
 
             tmp_stats = pd.DataFrame(data=[["xgboost", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if LASSO: 
-            r2, mse = lasso_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = lasso_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos, to_pos)
 
             tmp_stats = pd.DataFrame(data=[["lasso", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         
         if RIDGE:
-            r2, mse = ridge_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = ridge_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos, to_pos)
 
             tmp_stats = pd.DataFrame(data=[["ridge", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
             stats_df = pd.concat([stats_df, tmp_stats], ignore_index=True)
         if RF:
-            r2, mse = forest_model(suggest_features, clean_df, path_prefix, target, save_models)
+            r2, mse = forest_model(suggest_features, clean_df, path_prefix, target, save_models, from_pos, to_pos)
 
             tmp_stats = pd.DataFrame(data=[["rf", target, r2, mse]], columns = ["Model", "Target", "R^2", "MAE"])
 
@@ -597,6 +708,11 @@ def _train_position_models(df, from_pos, to_pos, targets, path_prefix, save_para
         file_path = "Figures/model_evaluation/model_metrics_baseline_team.csv"
         
         file_path_r2 = "Figures/model_evaluation/model_r_metrics_baseline_team.csv"
+
+    if BASELINE_NAIVE:
+        file_path = "Figures/model_evaluation/model_metrics_baseline_naive.csv"
+        
+        file_path_r2 = "Figures/model_evaluation/model_r_metrics_baseline_naive.csv"
 
     if os.path.isfile(file_path):
         stats_mae.to_csv(file_path, mode='a', header=False, index=False)

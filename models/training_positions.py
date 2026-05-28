@@ -31,27 +31,29 @@ from setup import (
     FB_QUALITIES,
     CENTRAL_DEFENDER_QUALITIES,
     MIDFIELDER_QUALITIES,
+    TEAM_QUALS
 )
+from team_qualities import get_team_qualities, convertToZscores
 
 # ========== TRAINING FLAGS ==========
-TRAIN_WINGER_STRIKER = True
+TRAIN_WINGER_STRIKER = False
 TRAIN_WINGER_FB = False
 TRAIN_FB_CD = True
-TRAIN_FB_WINGER = True
-TRAIN_CD_FB = True
-TRAIN_CD_MF = True
+TRAIN_FB_WINGER = False
+TRAIN_CD_FB = False
+TRAIN_CD_MF = False
 TRAIN_ST_WINGER = True
-TRAIN_ST_MF = True
+TRAIN_ST_MF = False
 TRAIN_MIDFIELDER_STRIKER = False
 TRAIN_MIDFIELDER_CD = True
-TRAIN_WINGER_MIDFIELDER = True
+TRAIN_WINGER_MIDFIELDER = False
 TRAIN_MIDFIELDER_WINGER = True
 
-TRAIN_ST_ST = True
+TRAIN_ST_ST = False
 TRAIN_WINGER_WINGER = True
-TRAIN_FB_FB = True
+TRAIN_FB_FB = False
 TRAIN_CD_CD = True
-TRAIN_MIDFIELD_MIDFIELD = True
+TRAIN_MIDFIELD_MIDFIELD = False
 
 # NOTE: Train_midfielders is aimed for subpositions within midfielders, so it will not be trained if TRAIN_OTHER_TO_MF is False
 TRAIN_MIDFIELDERS = False
@@ -65,6 +67,19 @@ def main():
     predicted_df = pd.DataFrame()  # Initialize an empty DataFrame to store predictions from all models
 
     df = load_data()
+
+    # team_quals = TEAM_QUALS
+
+    # df_get_team = df.copy()
+    # df_to_team = df.copy()
+
+    # for qual in team_quals:
+    #     df_get_team = get_team_qualities(qual, df_get_team, "from_")
+    #     df_to_team = get_team_qualities(qual, df_to_team, "to_")
+    #     quality_col = qual.lower()
+
+    #     df[f"from_{quality_col}"] = df_get_team[quality_col]
+    #     df[f"to_{quality_col}"] = df_to_team[quality_col]
 
     def dropVals(df, quals):
         return df
@@ -138,35 +153,35 @@ def main():
 
     if TRAIN_ST_ST:
         print("\nStriker - Striker")
-        df_st_st = df[(df["from_position"] == "Striker") & (df["to_position"] == "Striker")].head(1500).copy()
+        df_st_st = df[(df["from_position"] == "Striker") & (df["to_position"] == "Striker")].copy()
         df_st_st = dropVals(df_st_st, STRIKER_QUALITIES)
         print(f"Samples: {len(df_st_st)}")
         train_same_position(df_st_st, targets=STRIKER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Striker", df_predictions=predicted_df)
 
     if TRAIN_WINGER_WINGER:
         print("\nWinger - Winger")
-        df_w_w = df[(df["from_position"] == "Winger") & (df["to_position"] == "Winger")].head(1500).copy()
+        df_w_w = df[(df["from_position"] == "Winger") & (df["to_position"] == "Winger")].copy()
         df_w_w = dropVals(df_w_w, WINGER_QUALITIES)
         print(f"Samples: {len(df_w_w)}")
         train_same_position(df_w_w, targets=WINGER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Winger", df_predictions=predicted_df)
 
     if TRAIN_FB_FB:
         print("\nFull Back - Full Back")
-        df_fb_fb = df[(df["from_position"] == "Full Back") & (df["to_position"] == "Full Back")].head(1500).copy()
+        df_fb_fb = df[(df["from_position"] == "Full Back") & (df["to_position"] == "Full Back")].copy()
         df_fb_fb = dropVals(df_fb_fb, FB_QUALITIES)
         print(f"Samples: {len(df_fb_fb)}")
         train_same_position(df_fb_fb, targets=FB_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Full Back", df_predictions=predicted_df)
 
     if TRAIN_CD_CD:
         print("\nCentral Defender - Central Defender")
-        df_cd_cd = df[(df["from_position"] == "Central Defender") & (df["to_position"] == "Central Defender")].head(1500).copy()
+        df_cd_cd = df[(df["from_position"] == "Central Defender") & (df["to_position"] == "Central Defender")].copy()
         df_cd_cd = dropVals(df_cd_cd, CENTRAL_DEFENDER_QUALITIES)
         print(f"Samples: {len(df_cd_cd)}")
         train_same_position(df_cd_cd, targets=CENTRAL_DEFENDER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Central Defender", df_predictions=predicted_df)
 
     if TRAIN_MIDFIELD_MIDFIELD:
         print("\nMidfielder - Midfielder")
-        df_mf_mf = df[(df["from_position"] == "Midfielder") & (df["to_position"] == "Midfielder")].head(1500).copy()
+        df_mf_mf = df[(df["from_position"] == "Midfielder") & (df["to_position"] == "Midfielder")].copy()
         df_mf_mf = dropVals(df_mf_mf, MIDFIELDER_QUALITIES)
         print(f"Samples: {len(df_mf_mf)}")
         train_same_position(df_mf_mf, targets=MIDFIELDER_QUALITIES, save_params=SAVE_PARAMS, save_models=SAVE_MODELS, verbose=VERBOSE, position="Midfielder", df_predictions=predicted_df)
