@@ -461,22 +461,22 @@ def plot_shap_features(combined_shap, labels, colors, OUT_DIR, PNG_NAME):
     plt.savefig(os.path.join(OUT_DIR, f"{PNG_NAME}.png"), dpi=220)
     plt.close(fig)
 
-def plot_position_breakdown(cd_df, dest_counts, OUT_DIR, PNG_NAME):
+def plot_position_breakdown(cd_df, dest_counts, pos, target_pos, OUT_DIR, PNG_NAME):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
     # Bar chart
     ax = axes[0]
-    colors_cd = ["darkorange" if d == "Full Back" else "steelblue" for d in dest_counts.index]
+    colors_cd = ["darkorange" if d == target_pos else "steelblue" for d in dest_counts.index]
     ax.bar([clean_label(d) for d in dest_counts.index], dest_counts.values, color=colors_cd)
     ax.set_ylabel("Number of Sampled Players", fontweight="bold")
-    ax.set_title("Central Defender: Predicted Destination", fontweight="bold")
+    ax.set_title(f"{pos}: Predicted Destination", fontweight="bold")
     ax.grid(axis="y", linestyle="--", alpha=0.3)
     for x, y in zip([clean_label(d) for d in dest_counts.index], dest_counts.values):
         ax.text(x, y + 2, str(y), ha="center", fontsize=9)
 
     # Pie chart
     ax2 = axes[1]
-    wedge_colors = ["darkorange" if d == "Full Back" else "steelblue" for d in dest_counts.index]
+    wedge_colors = ["darkorange" if d == target_pos else "steelblue" for d in dest_counts.index]
     wedges, texts, autotexts = ax2.pie(
         dest_counts.values,
         labels=[clean_label(d) for d in dest_counts.index],
@@ -486,10 +486,10 @@ def plot_position_breakdown(cd_df, dest_counts, OUT_DIR, PNG_NAME):
     )
     for at in autotexts:
         at.set_fontsize(10)
-    ax2.set_title("Central Defender: Destination Share", fontweight="bold")
+    ax2.set_title(f"{pos}: Destination Share", fontweight="bold")
 
     fig.suptitle(
-        f"Where Central Defenders Are Predicted to Move\n(n={len(cd_df)} samples)",
+        f"Where {pos} Are Predicted to Move\n(n={len(cd_df)} samples)",
         fontweight="bold", fontsize=13,
     )
     plt.tight_layout()

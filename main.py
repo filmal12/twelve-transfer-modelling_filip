@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 
+from analysis.mae_comparison import main as compare_mae
 from models.training_positions import main as train_models
 from models.team_model import main as train_team
 from misc.prediction_analysis import run_analysis as analysis
@@ -14,7 +15,7 @@ def main():
 
     parser.add_argument(
         "command",
-        choices=["app", "player_model", "team_model", "analysis"],
+        choices=["app", "player_model", "team_model", "analysis", "improvement"],
         help="Which module to run"
     )
 
@@ -28,6 +29,8 @@ def main():
         train_team()
     elif args.command == "analysis":
         analysis()
+    elif args.command == "improvement":
+        compare_mae()
 
 if __name__ == "__main__":
     main()

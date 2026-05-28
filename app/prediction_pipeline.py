@@ -124,7 +124,7 @@ def predict_player(player_name, season, df_full, competition_data):
                         pos_scores[target] = pred
                 except Exception as e:
                     st.warning(f"Error loading model {path}/{target}: {e}")
-            print(pos_scores)
+                    
         valid_scores = {k: v for k, v in pos_scores.items() if v is not None}
         average[to_pos] = np.mean(list(valid_scores.values()))
         if valid_scores:

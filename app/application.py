@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import matplotlib
+import numpy as np
+import joblib
 
 matplotlib.use("Agg")
 import os
@@ -80,45 +82,103 @@ def main():
     }
 
 
-    def getTopFeatures(position):
-        df_parsed = pd.DataFrame()
+    # def getTopFeatures(position):
+    #     df_parsed = pd.DataFrame()
 
-        pos_prefix = f"{POS_ABBREV[position].lower()}"
+    #     pos_prefix = f"{POS_ABBREV[position].lower()}"
+
+    #     for pos_to in POSITION_TRANSITIONS[position]:
+    #         to_pos = POS_ABBREV[pos_to].lower()
+
+    #         path = ""
+
+    #         if pos_prefix == to_pos:
+    #             path = f"parameters/same_position/{position}/"
+    #         else: 
+    #             path = f"parameters/{pos_prefix}_to_{to_pos}/"
+
+    #         for quality in POSITION_QUALITIES[pos_to]:
+    #             final_path = ""
+
+    #             if TYPE_ANALYSIS == "OLS":
+    #                 final_path = f"{path}/{quality}.csv"
+    #             else:
+    #                 final_path = f"{path}/{quality}_top_features.csv"
+
+    #             df = pd.read_csv(final_path)
+
+    #             df.drop(columns=["max", "min"], inplace=True, errors="ignore")
+
+    #             df.rename(columns={"mean": "importance", "Factor": "feature"}, inplace=True)
+
+    #             df = df[df["feature"] != "Intercept"].copy()
+
+    #             df["To position"] = pos_to
+
+    #             df["From position"] = position
+
+    #             df_parsed = pd.concat([df_parsed, df], ignore_index=True)
+        
+    #     df_parsed = df_parsed.groupby(['feature', 'To position', 'From position'], as_index=False)['importance'].mean()
+    #     return df_parsed.loc[df_parsed.groupby('feature')['importance'].idxmax()]
+
+    def getTopFeatures(position):
+
+        df_parsed = pd.DataFrame()
+        pos_prefix = POS_ABBREV[position].lower()
 
         for pos_to in POSITION_TRANSITIONS[position]:
             to_pos = POS_ABBREV[pos_to].lower()
 
-            path = ""
-
             if pos_prefix == to_pos:
-                path = f"parameters/same_position/{position}/"
-            else: 
-                path = f"parameters/{pos_prefix}_to_{to_pos}/"
+                path = f"parameters/same_position/{position}"
+            else:
+                path = f"parameters/{pos_prefix}_to_{to_pos}"
 
             for quality in POSITION_QUALITIES[pos_to]:
-                final_path = ""
+                shap_path = f"{path}/{quality}_xgboost_shap_values.npy"
+                model_path = f"{path}/{quality}_xgboost.pkl"
 
-                if TYPE_ANALYSIS == "OLS":
-                    final_path = f"{path}/{quality}.csv"
-                else:
-                    final_path = f"{path}/{quality}_top_features.csv"
+                if not os.path.exists(shap_path) or not os.path.exists(model_path):
+                    continue
 
-                df = pd.read_csv(final_path)
+                shap_values = np.load(shap_path)           # (n_samples, n_features)
+                model = joblib.load(model_path)
+                feature_names = model.get_booster().feature_names
 
-                df.drop(columns=["max", "min"], inplace=True, errors="ignore")
+                # Mean absolute SHAP = robust importance (no cancellation)
+                abs_importance = np.abs(shap_values).mean(axis=0)
+                # Signed mean SHAP = directional effect
+                signed_importance = shap_values.mean(axis=0)
+                # Std of SHAP = how variable the feature's effect is across players
+                shap_std = shap_values.std(axis=0)
 
-                df.rename(columns={"mean": "importance", "Factor": "feature"}, inplace=True)
-
-                df = df[df["feature"] != "Intercept"].copy()
-
-                df["To position"] = pos_to
-
-                df["From position"] = position
+                df = pd.DataFrame({
+                    "feature": feature_names,
+                    "abs_importance": abs_importance,
+                    "importance": signed_importance,
+                    "shap_std": shap_std,
+                    "quality": quality,
+                    "To position": pos_to,
+                    "From position": position,
+                })
 
                 df_parsed = pd.concat([df_parsed, df], ignore_index=True)
-        
-        df_parsed = df_parsed.groupby(['feature', 'To position', 'From position'], as_index=False)['importance'].mean()
-        return df_parsed.loc[df_parsed.groupby('feature')['importance'].idxmax()]
+
+        # Aggregate per feature per target position:
+        # - abs_importance for ranking (avoids sign cancellation)
+        # - signed importance for interpretation
+        # - mean std for variability signal
+        # - quality_count = how many qualities the feature impacts
+        agg = df_parsed.groupby(["feature", "To position", "From position"]).agg(
+            mean_abs_importance=("abs_importance", "mean"),
+            mean_importance=("importance", "mean"),
+            mean_shap_std=("shap_std", "mean"),
+            quality_count=("quality", "nunique"),
+        ).reset_index()
+
+        # For each feature, pick the target position where it matters most
+        return agg.loc[agg.groupby("feature")["mean_abs_importance"].idxmax()]
 
     st.title("Transfer Modelling")
 
